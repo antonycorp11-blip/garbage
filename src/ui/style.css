@@ -310,3 +310,29 @@ table.inv td:last-child { border-radius: 0 10px 10px 0; text-align: right; white
   .card canvas { width: 60px; height: 60px; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
 }
+
+/* ---------- phone in landscape: everything compact, nothing over the play area ---------- */
+@media (max-height: 520px) and (orientation: landscape) {
+  .hud-counter { left: 50%; right: auto; transform: translateX(-50%); width: auto; min-width: 200px; padding: 4px 14px 5px; top: calc(4px + var(--safe-t)); }
+  .hud-counter .lbl { font-size: 9px; }
+  .hud-counter .num { font-size: 22px; }
+  .hud-counter .bar { height: 4px; margin: 3px 0 2px; }
+  .hud-counter .sub { font-size: 10px; }
+  .hud-left { top: calc(4px + var(--safe-t)); left: calc(6px + env(safe-area-inset-left, 0px)); right: auto; width: 168px; flex-direction: column; gap: 4px; }
+  .hud-left .chip { flex: none; }
+  .hud-right { flex-direction: row; top: calc(4px + var(--safe-t)); right: calc(6px + env(safe-area-inset-right, 0px)); gap: 4px; max-width: calc(50vw - 120px); flex-wrap: wrap; justify-content: flex-end; }
+  .mbtn { width: 36px; height: 36px; border-radius: 10px; }
+  .mbtn svg { width: 19px; height: 19px; }
+  .goal { top: auto; bottom: calc(8px + var(--safe-b)); left: 50%; transform: translateX(-50%); max-width: 40vw; font-size: 10px; white-space: nowrap; }
+  .msgs { top: calc(88px + var(--safe-t)); left: calc(6px + env(safe-area-inset-left, 0px)); width: min(300px, 38vw); }
+  .msg { font-size: 11px; }
+  .actbtns { flex-direction: row !important; align-items: flex-end; right: calc(12px + env(safe-area-inset-right, 0px)); bottom: calc(12px + var(--safe-b)); gap: 10px; }
+  .bigbtn { width: 78px; height: 78px; font-size: 14px; }
+  .bigbtn.int { width: 58px; height: 58px; font-size: 10px; }
+  .zoombtns { right: calc(12px + env(safe-area-inset-right, 0px)); bottom: calc(100px + var(--safe-b)); flex-direction: row; }
+  .zoombtns .mbtn { width: 36px; height: 36px; }
+  .joyhint { display: none !important; }
+  .mpanel { left: auto; right: 10px; width: 280px; top: 50px; bottom: auto; max-height: calc(100vh - 60px); overflow-y: auto; }
+  .buildbar { top: auto; bottom: calc(8px + var(--safe-b)); width: auto; max-width: 70vw; }
+  .hint { bottom: calc(100px + var(--safe-b)); }
+}

@@ -45,7 +45,7 @@ export class Renderer {
     this.vignette = null;
   }
 
-  get minZoom() { return Math.max(0.5, Math.min(this.W, this.H) / 900); }
+  get minZoom() { return Math.max(0.45, Math.min(this.W, this.H) / 1100); }
 
   screenToWorld(sx: number, sy: number) {
     return { x: (sx - this.W / 2) / this.cam.zoom + this.cam.x, y: (sy - this.H / 2) / this.cam.zoom + this.cam.y };

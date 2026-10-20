@@ -10,6 +10,7 @@ import { Effects } from './render/Effects';
 import { BuildPreview, Renderer } from './render/Renderer';
 import { buildItemSprites } from './render/sprites';
 import { Input, PointerSink } from './ui/Input';
+import { drawWorker } from './render/character';
 import { UI } from './ui/UI';
 import './ui/style.css';
 
@@ -55,7 +56,8 @@ export class App implements PointerSink {
     window.addEventListener('resize', () => this.renderer.resize());
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.save(); });
     window.addEventListener('beforeunload', () => this.save());
-    this.renderer.cam.targetZoom = this.renderer.cam.zoom = document.body.classList.contains('touch') ? 0.85 : 1.05;
+    this.renderer.cam.targetZoom = this.renderer.cam.zoom = this.defaultZoom();
+    window.addEventListener('orientationchange', () => setTimeout(() => { this.renderer.resize(); this.renderer.cam.targetZoom = this.defaultZoom(); }, 300));
     this.applySettings();
 
     if (load.error) console.warn('Save inválido, começando um novo jogo:', load.error);
@@ -77,6 +79,13 @@ export class App implements PointerSink {
     this.started = true;
     if (isNew) this.game.intro();
     if (this.game.ended) this.renderer.endingT = -1;
+  }
+
+  /** Zoom so roughly the same amount of world is visible on any screen. */
+  defaultZoom() {
+    const short = Math.min(window.innerWidth, window.innerHeight);
+    const touch = document.body.classList.contains('touch');
+    return clamp(short / (touch ? 560 : 760), 0.55, 1.1);
   }
 
   applySettings() {
@@ -301,7 +310,8 @@ export class App implements PointerSink {
 
 function boot() {
   try {
-    (window as unknown as { app: App }).app = new App();
+    (window as unknown as { app: App; gkArt: unknown }).app = new App();
+    (window as unknown as { gkArt: unknown }).gkArt = { drawWorker };
   } catch (e) {
     console.error(e);
     const t = document.querySelector('.boot-text');
