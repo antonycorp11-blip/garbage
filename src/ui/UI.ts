@@ -6,13 +6,14 @@ import { MATERIALS, MAT_COUNT } from '../data/materials';
 import { ENDING } from '../data/messages';
 import { G_ASPHALT, G_CONCRETE, G_EARTH, G_GRAVEL, G_RUINFLOOR } from '../data/regions';
 import { TOOLS } from '../data/tools';
-import { BRANCHES, Branch, UPGRADES, UPGRADE_MAP, upgradeCost } from '../data/upgrades';
+import { UPGRADES, UPGRADE_MAP } from '../data/upgrades';
 import { Game, GameEvent } from '../game/Game';
 import { Machine, botCount, centerX, centerY, hubRadius, isBelt, isHub, machineBufferCap, machineRadius, machineRate } from '../game/Machines';
 import { drawTool } from '../render/character';
 import { drawBelt, drawMachine } from '../render/machinesDraw';
 import { drawDiscovery } from '../render/specialsDraw';
 import { ICONS } from './icons';
+import { SkillTree } from './SkillTree';
 import type { App } from '../main';
 
 type Tab = 'upgrades' | 'build' | 'tools' | 'inventory' | 'map' | 'stats' | 'settings';
@@ -36,8 +37,6 @@ export class UI {
   private modalEl: HTMLElement | null = null;
   private refreshT = 0;
   private hudT = 0;
-  private selUpgrade = 'c_bag';
-  private branchTab: Branch = 'coleta';
   popupOpen = false;
   private popupQueue: (() => HTMLElement)[] = [];
   private thumbs = new Map<string, string>();
@@ -288,6 +287,7 @@ export class UI {
     head.innerHTML = TABS.map((t) => `<button class="tab ${t.id === tab ? 'on' : ''}" data-tab="${t.id}">${t.icon}<span>${t.name}</span></button>`).join('') + `<button class="close">✕</button>`;
     head.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => { this.app.audio.play('click'); this.openModal((b as HTMLElement).dataset.tab as Tab); }));
     head.querySelector('.close')!.addEventListener('click', () => this.closeModal());
+    this.modalEl.querySelector('.modal')!.classList.toggle('tree-mode', tab === 'upgrades');
     (this.modalEl.querySelector('.modal-b') as HTMLElement).scrollTop = 0;
     this.renderModal(true);
   }
@@ -303,7 +303,7 @@ export class UI {
     const body = this.modalEl.querySelector('.modal-b') as HTMLElement;
     const st = body.scrollTop;
     switch (this.modalTab) {
-      case 'upgrades': this.renderUpgrades(body); break;
+      case 'upgrades': this.renderUpgrades(body, full); break;
       case 'build': this.renderBuild(body); break;
       case 'tools': this.renderTools(body); break;
       case 'inventory': this.renderInventory(body); break;
@@ -314,52 +314,19 @@ export class UI {
     body.scrollTop = st;
   }
 
-  private renderUpgrades(body: HTMLElement) {
-    const g = this.game;
-    const ROWH = window.innerWidth < 760 ? 118 : 92;
-    let html = `<h2>Árvore de Melhorias</h2><p class="lead">Três caminhos: coletar mais, automatizar tudo e lucrar com cada tampinha.</p>
-      <div class="tree-tabs">${BRANCHES.map((b) => `<button class="tab ${b.id === this.branchTab ? 'on' : ''}" data-br="${b.id}" style="color:${b.color}">${b.name}</button>`).join('')}</div><div class="tree">`;
-    for (const br of BRANCHES) {
-      const ups = UPGRADES.filter((u) => u.branch === br.id);
-      const rows = Math.max(...ups.map((u) => u.row)) + 1;
-      const pos = (u: typeof ups[number]) => ({ x: (u.col + 0.5) * (100 / 3), y: u.row * ROWH + 8 });
-      let links = '';
-      for (const u of ups) for (const [rid] of u.req) {
-        const r = UPGRADE_MAP[rid];
-        if (r.branch !== br.id) continue;
-        const a = pos(r), b = pos(u);
-        const done = (g.upgrades[rid] || 0) > 0;
-        links += `<line x1="${a.x}%" y1="${a.y + 40}" x2="${b.x}%" y2="${b.y + 10}" stroke="${done ? br.color : '#5a4632'}" stroke-width="${done ? 3 : 2}" stroke-dasharray="${done ? '' : '5 4'}" opacity="${done ? 0.9 : 0.6}"/>`;
-      }
-      html += `<div class="branch ${br.id === this.branchTab ? 'show' : ''}" style="--bc:${br.color}"><h3 style="color:${br.color}">${br.name}</h3><div class="canvas" style="height:${rows * ROWH}px"><svg class="links">${links}</svg>`;
-      for (const u of ups) {
-        const lvl = g.upgrades[u.id] || 0;
-        const reqOk = g.upgradeReqsMet(u.id);
-        const max = lvl >= u.max;
-        const cost = upgradeCost(u, lvl);
-        const cls = max ? 'max' : !reqOk ? 'locked' : g.money >= cost ? 'afford' : 'avail';
-        const p = pos(u);
-        html += `<div class="node ${cls} ${this.selUpgrade === u.id ? 'sel' : ''}" data-up="${u.id}" style="left:${p.x}%;top:${p.y}px"><div class="ic">${u.icon}</div><span class="nm">${u.name}</span><span class="lv">${u.max > 1 ? `Nv ${lvl}/${u.max}` : max ? 'Adquirido' : 'Único'}</span><span class="pr">${max ? '✓' : fmtMoney(cost)}</span></div>`;
-      }
-      html += `</div></div>`;
+  private tree: SkillTree | null = null;
+
+  private renderUpgrades(body: HTMLElement, full: boolean) {
+    if (!this.tree) {
+      this.tree = new SkillTree(this.game);
+      this.tree.onBuy = (id) => this.game.buyUpgrade(id);
+      this.tree.onSound = (n) => this.app.audio.play(n);
     }
-    html += `</div>`;
-    const u = UPGRADE_MAP[this.selUpgrade];
-    const lvl = g.upgrades[u.id] || 0;
-    const prob = g.canBuyUpgrade(u.id);
-    const reqTxt = u.req.filter(([r, l]) => (g.upgrades[r] || 0) < l).map(([r, l]) => `${UPGRADE_MAP[r].name}${UPGRADE_MAP[r].max > 1 ? ' nv ' + l : ''}`).join(', ');
-    html += `<div class="updesc"><div class="ic">${u.icon}</div><div class="info"><b>${u.name}</b> <span class="muted">${u.max > 1 ? `Nv ${lvl}/${u.max}` : ''}</span><p>${esc(u.desc)}</p><p class="eff">${esc(u.effect)}</p>${reqTxt ? `<p class="req">Requer: ${esc(reqTxt)}</p>` : ''}</div>
-      ${lvl >= u.max ? `<span class="badge cur" style="position:static">MÁXIMO</span>` : `<button class="btn ${prob ? 'disabled' : 'green'}" data-buy="${u.id}">Comprar ${fmtMoney(upgradeCost(u, lvl))}</button>`}</div>`;
-    body.innerHTML = html;
-    body.querySelectorAll('[data-up]').forEach((n) => n.addEventListener('click', () => {
-      const id = (n as HTMLElement).dataset.up!;
-      if (this.selUpgrade === id && !g.canBuyUpgrade(id)) { g.buyUpgrade(id); }
-      this.selUpgrade = id;
-      this.app.audio.play('click');
-      this.renderModal(false);
-    }));
-    body.querySelectorAll('[data-br]').forEach((n) => n.addEventListener('click', () => { this.branchTab = (n as HTMLElement).dataset.br as Branch; this.renderModal(false); }));
-    body.querySelector('[data-buy]')?.addEventListener('click', () => { const e = g.buyUpgrade(u.id); if (e) this.flash(body.querySelector('[data-buy]')!); this.renderModal(false); });
+    if (full || !body.contains(this.tree.el)) {
+      body.innerHTML = '';
+      body.appendChild(this.tree.el);
+      requestAnimationFrame(() => this.tree!.update());
+    } else this.tree.update();
   }
 
   private flash(el: Element) {
