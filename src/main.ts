@@ -72,14 +72,33 @@ export class App implements PointerSink {
   }
 
   private start(isNew: boolean) {
-    this.audio.init();
-    this.audio.setMusic(this.settings.music);
-    this.audio.setSfx(this.settings.sfx);
-    if (this.started) return;
+    const first = !this.started;
+    // the game must start even if this browser refuses audio
     this.started = true;
+    try {
+      this.audio.init();
+      this.audio.setMusic(this.settings.music);
+      this.audio.setSfx(this.settings.sfx);
+    } catch (e) { this.reportError(e); }
+    if (!first) return;
     if (isNew) this.game.intro();
     if (this.game.ended) this.renderer.endingT = -1;
   }
+
+  private errorShown = false;
+  /** Shows the first runtime error on screen (so a player can send a screenshot) and keeps going. */
+  reportError(e: unknown) {
+    console.error(e);
+    if (this.errorShown) return;
+    this.errorShown = true;
+    const box = document.createElement('div');
+    box.style.cssText = 'position:fixed;left:8px;right:8px;bottom:8px;z-index:99;background:#7f1d1d;color:#fff;font:12px monospace;padding:8px;border-radius:8px;pointer-events:auto;white-space:pre-wrap;max-height:30vh;overflow:auto';
+    box.textContent = 'Erro (o jogo continua): ' + (e instanceof Error ? e.message + '\n' + (e.stack || '').split('\n').slice(0, 4).join('\n') : String(e));
+    box.onclick = () => box.remove();
+    document.body.appendChild(box);
+  }
+
+  safeAudio() { try { this.audio.init(); } catch { /* audio unavailable */ } }
 
   /** Zoom so roughly the same amount of world is visible on any screen. */
   defaultZoom() {
@@ -212,7 +231,7 @@ export class App implements PointerSink {
   buildMode() { return !!this.build; }
 
   worldDown(sx: number, sy: number, touch: boolean): boolean {
-    this.audio.init();
+    this.safeAudio();
     if (this.ui.popupOpen || this.ui.modalTab) return false;
     const b = this.build;
     if (b) {
@@ -324,7 +343,7 @@ export class App implements PointerSink {
   zoom(f: number) { this.zoomBy(f); }
 
   key(code: string) {
-    this.audio.init();
+    this.safeAudio();
     if (code === 'Escape') {
       if (this.ui.modalTab) this.ui.closeModal();
       else if (this.build) this.cancelBuild();
@@ -341,6 +360,11 @@ export class App implements PointerSink {
 
   // --------------------------------------------------------------- loop
   private frame(now: number) {
+    requestAnimationFrame((t) => this.frame(t));
+    try { this.step(now); } catch (e) { this.reportError(e); }
+  }
+
+  private step(now: number) {
     const dt = Math.min(0.05, Math.max(0, (now - this.last) / 1000));
     this.last = now;
     this.time += dt;
@@ -366,8 +390,10 @@ export class App implements PointerSink {
       interact: !blocked && (inp.keyInteract || inp.touchInteract),
       aim,
     };
-    if (this.started) g.update(dt, state);
-    else g.update(dt, { moveX: 0, moveY: 0, collect: false, interact: false, aim: null });
+    try {
+      if (this.started) g.update(dt, state);
+      else g.update(dt, { moveX: 0, moveY: 0, collect: false, interact: false, aim: null });
+    } catch (e) { this.reportError(e); }
     for (const e of g.events.splice(0)) {
       if (e.type === 'ending') this.renderer.endingT = 0;
       this.ui.handleEvent(e);
@@ -379,11 +405,10 @@ export class App implements PointerSink {
     } else this.renderer.focus = null;
     this.fx.update(dt);
     this.renderer.chunks.rendersThisFrame = 0;
-    this.renderer.draw(this.time, dt, this.build);
-    this.ui.update(dt);
+    try { this.renderer.draw(this.time, dt, this.build); } catch (e) { this.reportError(e); }
+    try { this.ui.update(dt); } catch (e) { this.reportError(e); }
     this.saveT += dt;
     if (this.saveT > 15 && this.started) { this.saveT = 0; this.save(); }
-    requestAnimationFrame((t) => this.frame(t));
   }
 }
 

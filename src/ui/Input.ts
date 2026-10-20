@@ -9,7 +9,14 @@ export interface PointerSink {
   buildMode(): boolean;
 }
 
-/** Keyboard, mouse and touch (dynamic joystick + pinch) input. */
+type Role = 'joy' | 'world' | 'pinch';
+interface Track { x: number; y: number; sx: number; sy: number; t: number; role: Role }
+
+/**
+ * Keyboard, mouse and touch input.
+ * Touch uses the native touch events (the most reliable path on phones); pointer events are
+ * only used for the mouse and as a fallback on devices without touch events.
+ */
 export class Input {
   keys = new Set<string>();
   mouse = { x: 0, y: 0, active: false, lastMove: 0 };
@@ -19,11 +26,12 @@ export class Input {
   touchInteract = false;
   keyInteract = false;
   joy = { id: -1, ox: 0, oy: 0, x: 0, y: 0 };
-  private pointers = new Map<number, { x: number; y: number; sx: number; sy: number; t: number; role: 'joy' | 'world' | 'pinch' }>();
+  pointers = new Map<number, Track>();
   private pinchDist = 0;
   touch = false;
+  private readonly nativeTouch = typeof window !== 'undefined' && 'ontouchstart' in window;
 
-  constructor(private canvas: HTMLCanvasElement, private sink: PointerSink, private joyEl: HTMLElement) {
+  constructor(canvas: HTMLCanvasElement, private sink: PointerSink, private joyEl: HTMLElement) {
     window.addEventListener('keydown', (e) => {
       if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
       const k = e.code;
@@ -43,11 +51,64 @@ export class Input {
     document.addEventListener('visibilitychange', () => { if (document.hidden) this.resetTouches(); });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     canvas.addEventListener('wheel', (e) => { e.preventDefault(); this.sink.zoom(e.deltaY < 0 ? 1.12 : 1 / 1.12); }, { passive: false });
-    canvas.addEventListener('pointerdown', (e) => this.down(e));
-    window.addEventListener('pointermove', (e) => this.move(e));
-    window.addEventListener('pointerup', (e) => this.up(e));
-    window.addEventListener('pointercancel', (e) => this.up(e));
+
+    // ---- native touch events (phones/tablets)
+    if (this.nativeTouch) {
+      const opts = { passive: false } as AddEventListenerOptions;
+      canvas.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        this.setTouch(true);
+        // every finger is new => anything still tracked is stale (lost gesture)
+        if (e.touches.length === e.changedTouches.length) this.resetTouches();
+        for (const t of Array.from(e.changedTouches)) this.touchDown(t.identifier, t.clientX, t.clientY);
+      }, opts);
+      canvas.addEventListener('touchmove', (e) => {
+        e.preventDefault();
+        for (const t of Array.from(e.changedTouches)) this.touchMove(t.identifier, t.clientX, t.clientY);
+      }, opts);
+      const end = (e: TouchEvent) => {
+        e.preventDefault();
+        for (const t of Array.from(e.changedTouches)) this.touchUp(t.identifier, t.clientX, t.clientY, e.type === 'touchcancel');
+        if (e.touches.length === 0 && this.joy.id >= 0) this.releaseJoy();
+      };
+      canvas.addEventListener('touchend', end, opts);
+      canvas.addEventListener('touchcancel', end, opts);
+    }
+
+    // ---- pointer events: mouse (and touch only when native touch events are missing)
+    canvas.addEventListener('pointerdown', (e) => {
+      if (this.isTouchPointer(e)) {
+        if (this.nativeTouch) return;
+        this.setTouch(true);
+        if (e.isPrimary) this.resetTouches();
+        try { canvas.setPointerCapture(e.pointerId); } catch { /* noop */ }
+        this.touchDown(e.pointerId, e.clientX, e.clientY);
+        return;
+      }
+      this.setTouch(false);
+      this.mouse.x = e.clientX; this.mouse.y = e.clientY; this.mouse.active = true; this.mouse.lastMove = performance.now();
+      if (e.button === 2) { this.sink.cancel(); return; }
+      if (e.button !== 0) return;
+      try { canvas.setPointerCapture(e.pointerId); } catch { /* noop */ }
+      this.mouseCollect = this.sink.worldDown(e.clientX, e.clientY, false);
+    });
+    window.addEventListener('pointermove', (e) => {
+      if (this.isTouchPointer(e)) { if (!this.nativeTouch) this.touchMove(e.pointerId, e.clientX, e.clientY); return; }
+      this.mouse.x = e.clientX; this.mouse.y = e.clientY; this.mouse.active = true; this.mouse.lastMove = performance.now();
+      this.sink.worldMove(e.clientX, e.clientY, false);
+    });
+    const pup = (e: PointerEvent) => {
+      if (this.isTouchPointer(e)) { if (!this.nativeTouch) this.touchUp(e.pointerId, e.clientX, e.clientY, e.type === 'pointercancel'); return; }
+      if (e.button === 0 || e.type === 'pointercancel') {
+        this.mouseCollect = false;
+        this.sink.worldUp(e.clientX, e.clientY, false, false);
+      }
+    };
+    window.addEventListener('pointerup', pup);
+    window.addEventListener('pointercancel', pup);
   }
+
+  private isTouchPointer(e: PointerEvent) { return e.pointerType === 'touch' || e.pointerType === 'pen'; }
 
   private setTouch(on: boolean) {
     if (this.touch === on) return;
@@ -55,61 +116,46 @@ export class Input {
     document.body.classList.toggle('touch', on);
   }
 
-  private down(e: PointerEvent) {
-    const isTouch = e.pointerType === 'touch' || e.pointerType === 'pen';
-    this.setTouch(isTouch);
-    try { this.canvas.setPointerCapture(e.pointerId); } catch { /* noop */ }
-    if (!isTouch) {
-      this.mouse.x = e.clientX; this.mouse.y = e.clientY; this.mouse.active = true; this.mouse.lastMove = performance.now();
-      if (e.button === 2) { this.sink.cancel(); return; }
-      if (e.button !== 0) return;
-      this.mouseCollect = this.sink.worldDown(e.clientX, e.clientY, false);
-      return;
-    }
-    // touch: the first finger on the screen means every older touch is gone, even if the
-    // browser never told us (system gestures, notifications, app switches)
-    if (e.isPrimary) this.resetTouches();
-    const worldPointers = [...this.pointers.values()].filter((p) => p.role !== 'joy');
-    if (worldPointers.length === 1 && !this.sink.buildMode()) {
-      // second finger outside the joystick => pinch
-      const other = worldPointers[0];
+  // ------------------------------------------------------------------ touch logic (shared)
+  private touchDown(id: number, x: number, y: number) {
+    const worldTracks = [...this.pointers.values()].filter((p) => p.role !== 'joy');
+    if (worldTracks.length === 1 && !this.sink.buildMode()) {
+      // a second finger outside the joystick => pinch zoom
+      const other = worldTracks[0];
       other.role = 'pinch';
-      this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now(), role: 'pinch' });
-      this.pinchDist = Math.hypot(other.x - e.clientX, other.y - e.clientY);
+      this.pointers.set(id, { x, y, sx: x, sy: y, t: performance.now(), role: 'pinch' });
+      this.pinchDist = Math.hypot(other.x - x, other.y - y);
       return;
     }
-    const leftSide = e.clientX < window.innerWidth * 0.5;
+    const leftSide = x < window.innerWidth * 0.5;
     if (leftSide && this.joy.id < 0 && !this.sink.buildMode()) {
-      this.joy = { id: e.pointerId, ox: e.clientX, oy: e.clientY, x: 0, y: 0 };
-      this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now(), role: 'joy' });
+      this.joy = { id, ox: x, oy: y, x: 0, y: 0 };
+      this.pointers.set(id, { x, y, sx: x, sy: y, t: performance.now(), role: 'joy' });
       this.joyEl.classList.add('on');
       document.body.classList.add('joy-used');
-      this.joyEl.style.left = e.clientX + 'px';
-      this.joyEl.style.top = e.clientY + 'px';
+      this.joyEl.style.left = x + 'px';
+      this.joyEl.style.top = y + 'px';
       (this.joyEl.firstElementChild as HTMLElement).style.transform = '';
       return;
     }
-    this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now(), role: 'world' });
-    this.sink.worldDown(e.clientX, e.clientY, true);
+    this.pointers.set(id, { x, y, sx: x, sy: y, t: performance.now(), role: 'world' });
+    this.sink.worldDown(x, y, true);
   }
 
-  private move(e: PointerEvent) {
-    const isTouch = e.pointerType === 'touch' || e.pointerType === 'pen';
-    if (!isTouch) {
-      this.mouse.x = e.clientX; this.mouse.y = e.clientY; this.mouse.active = true; this.mouse.lastMove = performance.now();
-      this.sink.worldMove(e.clientX, e.clientY, false);
-      return;
-    }
-    const p = this.pointers.get(e.pointerId);
+  private touchMove(id: number, x: number, y: number) {
+    const p = this.pointers.get(id);
     if (!p) return;
-    p.x = e.clientX; p.y = e.clientY;
+    p.x = x; p.y = y;
     if (p.role === 'joy') {
-      const dx = e.clientX - this.joy.ox, dy = e.clientY - this.joy.oy;
       const R = 50;
+      const dx = x - this.joy.ox, dy = y - this.joy.oy;
       const l = Math.hypot(dx, dy);
-      // dynamic joystick: drag the origin when exceeding the radius
-      if (l > R * 1.4) { this.joy.ox += (dx / l) * (l - R * 1.4); this.joy.oy += (dy / l) * (l - R * 1.4); this.joyEl.style.left = this.joy.ox + 'px'; this.joyEl.style.top = this.joy.oy + 'px'; }
-      const ddx = e.clientX - this.joy.ox, ddy = e.clientY - this.joy.oy;
+      // dynamic joystick: the base follows the finger when it goes too far
+      if (l > R * 1.4) {
+        this.joy.ox += (dx / l) * (l - R * 1.4); this.joy.oy += (dy / l) * (l - R * 1.4);
+        this.joyEl.style.left = this.joy.ox + 'px'; this.joyEl.style.top = this.joy.oy + 'px';
+      }
+      const ddx = x - this.joy.ox, ddy = y - this.joy.oy;
       const ll = Math.hypot(ddx, ddy);
       const k = Math.min(1, ll / R);
       this.joy.x = ll > 6 ? (ddx / ll) * k : 0;
@@ -123,51 +169,48 @@ export class Input {
         this.pinchDist = d;
       }
     } else {
-      this.sink.worldMove(e.clientX, e.clientY, true);
+      this.sink.worldMove(x, y, true);
     }
   }
 
-  private up(e: PointerEvent) {
-    const isTouch = e.pointerType === 'touch' || e.pointerType === 'pen';
-    if (!isTouch) {
-      if (e.button === 0 || e.type === 'pointercancel') {
-        this.mouseCollect = false;
-        this.sink.worldUp(e.clientX, e.clientY, false, false);
-      }
-      return;
-    }
-    const p = this.pointers.get(e.pointerId);
+  private touchUp(id: number, x: number, y: number, cancelled: boolean) {
+    const p = this.pointers.get(id);
     if (!p) return;
-    this.pointers.delete(e.pointerId);
-    if (p.role === 'joy') {
-      this.joy = { id: -1, ox: 0, oy: 0, x: 0, y: 0 };
-      this.joyEl.classList.remove('on');
-    } else if (p.role === 'world') {
-      const tap = Math.hypot(p.x - p.sx, p.y - p.sy) < 12 && performance.now() - p.t < 400;
-      this.sink.worldUp(e.clientX, e.clientY, true, tap);
+    this.pointers.delete(id);
+    if (p.role === 'joy') this.releaseJoy();
+    else if (p.role === 'world') {
+      const tap = !cancelled && Math.hypot(p.x - p.sx, p.y - p.sy) < 12 && performance.now() - p.t < 400;
+      this.sink.worldUp(x, y, true, tap);
     } else if (p.role === 'pinch') {
       for (const q of this.pointers.values()) if (q.role === 'pinch') q.role = 'world';
       this.pinchDist = 0;
     }
   }
 
+  private releaseJoy() {
+    this.joy = { id: -1, ox: 0, oy: 0, x: 0, y: 0 };
+    this.joyEl.classList.remove('on');
+  }
+
   /** Forget every tracked touch and release the joystick. */
   resetTouches() {
     this.pointers.clear();
     this.pinchDist = 0;
-    if (this.joy.id >= 0) {
-      this.joy = { id: -1, ox: 0, oy: 0, x: 0, y: 0 };
-      this.joyEl.classList.remove('on');
-    }
+    if (this.joy.id >= 0) this.releaseJoy();
   }
 
   bindHold(el: HTMLElement, set: (v: boolean) => void) {
-    const on = (e: PointerEvent) => { e.preventDefault(); e.stopPropagation(); this.setTouch(e.pointerType !== 'mouse'); set(true); el.classList.add('held'); try { el.setPointerCapture(e.pointerId); } catch { /* noop */ } };
-    const off = () => { set(false); el.classList.remove('held'); };
-    el.addEventListener('pointerdown', on);
-    el.addEventListener('pointerup', off);
-    el.addEventListener('pointercancel', off);
-    el.addEventListener('lostpointercapture', off);
+    const on = (e: Event) => { e.preventDefault(); e.stopPropagation(); this.setTouch(e.type === 'touchstart' || (e as PointerEvent).pointerType !== 'mouse'); set(true); el.classList.add('held'); };
+    const off = (e?: Event) => { if (e) e.preventDefault(); set(false); el.classList.remove('held'); };
+    if (this.nativeTouch) {
+      el.addEventListener('touchstart', on, { passive: false });
+      el.addEventListener('touchend', off, { passive: false });
+      el.addEventListener('touchcancel', off, { passive: false });
+    }
+    el.addEventListener('pointerdown', (e) => { if (this.nativeTouch && e.pointerType !== 'mouse') return; on(e); try { el.setPointerCapture(e.pointerId); } catch { /* noop */ } });
+    el.addEventListener('pointerup', (e) => { if (this.nativeTouch && e.pointerType !== 'mouse') return; off(); });
+    el.addEventListener('pointercancel', (e) => { if (this.nativeTouch && e.pointerType !== 'mouse') return; off(); });
+    el.addEventListener('lostpointercapture', (e) => { if (this.nativeTouch && e.pointerType !== 'mouse') return; off(); });
   }
 
   moveVector(): [number, number] {
