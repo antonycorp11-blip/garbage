@@ -146,7 +146,7 @@ export function drawMachine(c: C, m: Machine, g: Game, time: number, fx: Effects
     case 'depot': drawDepot(c, x, y, time, g); break;
     case 'collector': drawCollector(c, m, x, y, time, working, fx, onScreen); break;
     case 'arm': drawArm(c, m, x, y, time, working, fx, onScreen); break;
-    case 'crusher': drawCrusher(c, m, x, y, time, working, fx, onScreen); break;
+    case 'crusher': drawCrusher(c, m, x, y, time, working, fx, onScreen, g); break;
     case 'robots': drawStation(c, m, x, y, time); break;
     case 'excavator': drawGarage(c, m, x, y, time); break;
     case 'recycler': drawRecycler(c, x, y, time, fx, onScreen); break;
@@ -374,7 +374,7 @@ function crusherBase(level: number) {
   });
 }
 
-function drawCrusher(c: C, m: Machine, x: number, y: number, time: number, working: boolean, fx: Effects, onScreen: boolean) {
+function drawCrusher(c: C, m: Machine, x: number, y: number, time: number, working: boolean, fx: Effects, onScreen: boolean, g: Game) {
   const shake = working ? Math.sin(time * 55) * 0.5 : 0;
   c.save(); c.translate(shake, 0);
   blit(c, crusherBase(m.level), x, y);
@@ -404,8 +404,9 @@ function drawCrusher(c: C, m: Machine, x: number, y: number, time: number, worki
     if (Math.random() < 0.18) fx.smoke(x + 54, y - 36);
     if (Math.random() < 0.3) fx.burst(x + 32 + (Math.random() - 0.5) * 30, y + 12, 'spark', 1);
     if (Math.random() < 0.12) fx.burst(x + 32, y + 64, 'dust', 1);
-    const tp = targetPos(m);
-    if (tp && Math.random() < 0.6) fx.suck(tp[0] + (Math.random() - 0.5) * 24, tp[1] + (Math.random() - 0.5) * 24, x + 32, y + 12, Math.floor(Math.random() * 3), 0.6);
+    // material from the depot yard being fed into the hopper
+    const hub = g.machines.nearestHub(m.tx + 1, m.ty + 1);
+    if (hub && Math.random() < 0.12) fx.fly((hub.tx + 2.7) * TILE, (hub.ty + 2.8) * TILE, x + 32, y + 10, Math.floor(Math.random() * 5));
   }
 }
 
@@ -766,6 +767,14 @@ function drawDepot(c: C, x: number, y: number, time: number, g: Game) {
     lamp(c, bx, y - 31, '#fff3b0', (Math.floor(time * 6) + i) % 3 === 0, 0.55);
     lamp(c, bx, y - 17, '#fff3b0', (Math.floor(time * 6) + i) % 3 === 1, 0.55);
   }
+  // yard pile: grows with the queue of materials waiting to be processed
+  const fill = Math.min(1, g.yardTotal / Math.max(1, g.yardCap()));
+  if (fill > 0.01) drawYardPile(c, x + 86, y + 96, fill, time);
+  if (fill >= 0.98) {
+    const bob = Math.sin(time * 4) * 1.5;
+    c.beginPath(); c.arc(x + 86, y + 62 + bob, 6.5, 0, 6.28); c.fillStyle = '#ef4444'; c.fill(); c.strokeStyle = INK; c.lineWidth = 1; c.stroke();
+    c.fillStyle = '#fff'; c.font = 'bold 9px system-ui'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('!', x + 86, y + 62.5 + bob);
+  }
   // lamp glow
   glow(c, x - 4, y + 28, 18, '#ffe9a8', 0.25 + Math.sin(time * 1.3) * 0.05);
   // flag
@@ -777,6 +786,22 @@ function drawDepot(c: C, x: number, y: number, time: number, g: Game) {
   for (let i = 14; i >= 0; i -= 2) c.lineTo(fx0 + 1.6 + i, fy0 + 8 + Math.sin(time * 5 + i * 0.5) * 1.6);
   c.closePath(); c.fill();
   c.fillStyle = '#fff'; c.font = 'bold 5px system-ui'; c.fillText('♻', fx0 + 6, fy0 + 6 + Math.sin(time * 5 + 3) * 1.6);
+}
+
+const PILE_COLS = ['#4fc3f7', '#e0c08f', '#cfd8dc', '#86efac', '#ffd54f', '#8d6e63', '#2b2d33'];
+function drawYardPile(c: C, cx: number, by: number, fill: number, time: number) {
+  const w = 10 + fill * 16, h = 4 + fill * 14;
+  groundShadow(c, cx + 2, by, w + 3, 4, 0.35);
+  c.beginPath(); c.moveTo(cx - w, by); c.quadraticCurveTo(cx - w * 0.6, by - h, cx, by - h); c.quadraticCurveTo(cx + w * 0.6, by - h, cx + w, by); c.closePath();
+  c.fillStyle = '#7a6040'; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+  const n = Math.ceil(6 + fill * 22);
+  for (let i = 0; i < n; i++) {
+    const t = (i * 0.618) % 1, row = (i * 0.37) % 1;
+    const px = cx + (t - 0.5) * w * 1.7 * (1 - row * 0.6), py = by - 2 - row * h * 0.85;
+    c.save(); c.translate(px, py); c.rotate(i * 1.3 + Math.sin(time * 0.5 + i) * 0.02);
+    rrect(c, -1.8, -1.3, 3.6, 2.6, 0.8); c.fillStyle = PILE_COLS[i % PILE_COLS.length]; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.6; c.stroke();
+    c.restore();
+  }
 }
 
 // =====================================================================================================

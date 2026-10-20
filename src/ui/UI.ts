@@ -1,7 +1,7 @@
 import { TILE, TOTAL_GARBAGE, WORLD_TILES } from '../core/constants';
 import { fmtInt, fmtMoney, fmtPct, fmtShort, fmtTime } from '../core/format';
 import { DISCOVERIES } from '../data/discoveries';
-import { BUILD_ORDER, MACHINES, MAX_MACHINE_LEVEL, MachineType, machineUpgradeCost } from '../data/machines';
+import { BUILD_ORDER, MACHINES, MAX_MACHINE_LEVEL, MachineRole, MachineType, ROLE_NAMES, machineUpgradeCost } from '../data/machines';
 import { MATERIALS, MAT_COUNT } from '../data/materials';
 import { ENDING, SENDER } from '../data/messages';
 import { G_ASPHALT, G_CONCRETE, G_EARTH, G_GRAVEL, G_RUINFLOOR } from '../data/regions';
@@ -66,6 +66,7 @@ export class UI {
       <div class="chip money pe">${ICONS.coin.replace('<svg', '<svg class="ico"')}<span class="mv">$0</span><span class="rate"></span></div>
       <div class="chip bag pe"><div class="row"><span>${ICONS.bag.replace('<svg', '<svg style="width:16px;height:16px;vertical-align:-3px"')} Mochila</span><span class="bv">0/20</span></div><div class="bar"><i></i></div></div>
       <div class="chip toolchip pe"><span class="tn">Mãos Nuas</span><small class="tl">1/7</small></div>
+      <div class="chip yard pe" style="display:none" title="Pátio do depósito: o que as máquinas entregam espera aqui para ser processado"><div class="row"><span>⚙ Pátio</span><span class="yv">0/250</span></div><div class="bar"><i></i></div></div>
     </div>`);
     r.appendChild(left);
     this.el.left = left;
@@ -126,6 +127,17 @@ export class UI {
       (L.querySelector('.bag .bar i') as HTMLElement).style.width = (100 * p.carried) / g.d.capacity + '%';
       L.querySelector('.bag')!.classList.toggle('full', p.carried >= g.d.capacity);
       L.querySelector('.tn')!.textContent = g.tool.name;
+      const yc = L.querySelector('.yard') as HTMLElement;
+      const hasAuto = g.machines.machines.some((m) => MACHINES[m.type].buffer > 0 || g.yardTotal > 0);
+      yc.style.display = hasAuto ? '' : 'none';
+      document.body.classList.toggle('has-yard', hasAuto);
+      if (hasAuto) {
+        const yf = g.yardTotal / Math.max(1, g.yardCap());
+        yc.querySelector('.yv')!.textContent = `${fmtShort(g.yardTotal)}/${fmtShort(g.yardCap())} · ${fmtShort(g.processRate())}/s`;
+        (yc.querySelector('.bar i') as HTMLElement).style.width = Math.min(100, yf * 100) + '%';
+        yc.classList.toggle('full', yf >= 0.98);
+        yc.classList.toggle('warn', yf >= 0.7 && yf < 0.98);
+      }
       L.querySelector('.tl')!.textContent = `${g.toolTier + 1}/${TOOLS.length}`;
       this.el.goal.textContent = this.app.build ? '' : g.nextGoal();
       // notification dots
@@ -209,7 +221,7 @@ export class UI {
     const cost = this.game.machineCost(b.type);
     const belt = isBelt(b.type);
     bar.style.display = 'flex';
-    bar.innerHTML = `<div class="bb-h"><span class="name">${def.name}</span><span class="cost">${this.costHtml(cost)}</span></div>
+    bar.innerHTML = `<div class="bb-h"><span class="name">${b.moving ? 'Movendo: ' : ''}${def.name}</span><span class="cost">${b.moving ? '<span class="cost">grátis</span>' : this.costHtml(cost)}</span></div>
       <div class="bb-msg"></div>
       <div class="bb-pad mobile-only">
         <button class="pad" data-n="-1,0" aria-label="Esquerda">◀</button><button class="pad" data-n="0,-1" aria-label="Cima">▲</button><button class="pad" data-n="0,1" aria-label="Baixo">▼</button><button class="pad" data-n="1,0" aria-label="Direita">▶</button>
@@ -218,7 +230,7 @@ export class UI {
       <div class="bb-a">
         ${belt ? `<button class="btn ghost desk-only" data-a="rot">↻ Girar <span class="key">R</span></button>` : ''}
         <button class="btn ghost" data-a="cancel">✕ Sair <span class="key desk-only">Esc</span></button>
-        <button class="btn green mobile-only" data-a="ok">${belt ? '✓ Colocar esteira' : '✓ Construir aqui'}</button>
+        <button class="btn green mobile-only" data-a="ok">${belt ? '✓ Colocar esteira' : b.moving ? '✓ Colocar aqui' : '✓ Construir aqui'}</button>
       </div>`;
     bar.querySelector('[data-a=cancel]')?.addEventListener('click', () => this.app.cancelBuild());
     bar.querySelectorAll('[data-a=rot]').forEach((x) => x.addEventListener('click', () => { this.app.rotateBuild(); this.refreshBuildBar(); }));
@@ -273,11 +285,16 @@ export class UI {
     p.style.display = 'block';
     const d = g.d;
     let status = '', cls = 'ok';
-    if (isHub(m.type)) { status = `Recebe materiais. Raio de serviço: ${Math.round(hubRadius(m, d))} m`; }
+    const yardFull = g.yardSpace() <= 0;
+    if (isHub(m.type)) {
+      status = yardFull ? 'Pátio lotado! Máquinas esperando. Construa um Triturador dentro do círculo.' : g.yardTotal > g.yardCap() * 0.7 ? 'Pátio quase cheio: um Triturador ajudaria.' : 'Processando normalmente.';
+      cls = yardFull ? 'bad' : g.yardTotal > g.yardCap() * 0.7 ? 'warn' : 'ok';
+    } else if (m.type === 'crusher') { status = m.status === 'working' ? 'Triturando a fila do pátio' : 'Pátio vazio, aguardando material'; cls = m.status === 'working' ? 'ok' : 'warn'; }
     else if (isBelt(m.type)) { status = m.linked ? 'Conectada a um depósito ✓' : 'Não chega a um depósito: siga até o depósito'; cls = m.linked ? 'ok' : 'bad'; }
     else if (m.type === 'ancient') status = 'Entrega direta no depósito (mistério)';
-    else if (m.status === 'full') { status = 'Caçamba cheia! Esvazie ou conecte uma esteira.'; cls = 'bad'; }
-    else if (m.status === 'idle') { status = 'Sem lixo no alcance.'; cls = 'warn'; }
+    else if (m.status === 'full' && m.inService && yardFull) { status = 'Parada: o pátio do depósito está lotado. Construa um Triturador.'; cls = 'bad'; }
+    else if (m.status === 'full') { status = 'Caçamba cheia! Conecte ao depósito ou esvazie.'; cls = 'bad'; }
+    else if (m.status === 'idle') { status = (def.heavy ? 'Área limpa! ' : 'Só sobrou entulho pesado (ou nada) no alcance. ') + 'Use ↔ Mover para levá-la a uma área com lixo.'; cls = 'warn'; }
     else status = 'Trabalhando';
     let delivery = '';
     if (!isHub(m.type) && !isBelt(m.type) && m.type !== 'ancient') {
@@ -288,7 +305,14 @@ export class UI {
     const near = Math.hypot(g.player.tx - centerX(m), g.player.ty - centerY(m)) < def.size / 2 + 2;
     const needsLink = def.buffer > 0 && !m.inService && !(m.outConveyor >= 0 && m.linked);
     const plan = needsLink && g.isUnlocked('conveyor') ? g.planConnection(m) : null;
-    const kv: string[] = [];
+    const kv: string[] = [`<span>Função</span><span>${esc(def.func)}</span>`];
+    if (isHub(m.type)) {
+      kv.push(`<span>Pátio</span><span>${fmtInt(g.yardTotal)} / ${fmtInt(g.yardCap())}</span>`);
+      kv.push(`<span>Vazão total</span><span>${fmtShort(g.processRate())}/s</span>`);
+      kv.push(`<span>Área de serviço</span><span>${Math.round(hubRadius(m, d))} m</span>`);
+    }
+    if (m.type === 'crusher') kv.push(`<span>Processa</span><span>+${fmtShort(def.process * (1 + 0.5 * (m.level - 1)))}/s</span>`);
+    if (def.rate > 0) kv.push(`<span>Ergue pesado</span><span>${def.heavy ? 'Sim ✓' : 'Não'}</span>`);
     if (def.rate > 0) kv.push(`<span>Velocidade</span><span>${fmtShort(machineRate(m, d) * (m.type === 'robots' ? botCount(m, d) : 1))}/s</span>`);
     if (def.radius > 0 && !isHub(m.type)) kv.push(`<span>Alcance</span><span>${machineRadius(m, d).toFixed(1)} m</span>`);
     if (m.type === 'robots') kv.push(`<span>Robôs</span><span>${botCount(m, d)}</span>`);
@@ -304,6 +328,7 @@ export class UI {
         ${canUp ? `<button class="btn ${g.money < upCost ? 'disabled' : 'green'}" data-a="up">Melhorar ${fmtMoney(upCost)}</button>` : ''}
         ${m.bufferTotal > 0 ? `<button class="btn ${near ? '' : 'disabled'}" data-a="empty" title="Chegue perto">Esvaziar na mochila</button>` : ''}
         ${isBelt(m.type) ? `<button class="btn ghost" data-a="rot">↻ Girar</button>` : ''}
+        ${def.buildable && !isBelt(m.type) ? `<button class="btn ghost" data-a="move">↔ Mover</button>` : ''}
         ${def.buildable ? `<button class="btn red" data-a="del">Demolir</button>` : ''}
       </div>`;
     p.querySelector('[data-a=x]')?.addEventListener('click', () => this.select(null));
@@ -311,6 +336,7 @@ export class UI {
     p.querySelector('[data-a=empty]')?.addEventListener('click', () => { if (near) g.emptyMachineIntoBackpack(m); else this.toastErr('Chegue mais perto da máquina'); this.mpanelT = 0; });
     p.querySelector('[data-a=rot]')?.addEventListener('click', () => { m.dir = (m.dir + 1) % 4; g.machines.linksDirty = true; this.app.audio.play('click'); this.mpanelT = 0; });
     p.querySelector('[data-a=del]')?.addEventListener('click', () => { g.demolish(m); this.select(null); });
+    p.querySelector('[data-a=move]')?.addEventListener('click', () => this.app.startMove(m));
     p.querySelector('[data-a=link]')?.addEventListener('click', () => { const e = g.connectToDepot(m); if (e) { this.app.audio.play('error'); this.toastErr(e); } else this.message('Esteiras construídas! Os materiais agora vão sozinhos até o depósito.', 'Sistema'); this.mpanelT = 0; });
   }
 
@@ -408,25 +434,34 @@ export class UI {
 
   private renderBuild(body: HTMLElement) {
     const g = this.game;
-    let html = `<p class="lead">Construa em terreno limpo. Dentro do círculo azul do depósito as máquinas entregam sozinhas; longe dele, use esteiras.</p><div class="grid">`;
-    for (const t of BUILD_ORDER) {
-      const def = MACHINES[t];
-      const unl = g.isUnlocked(t);
-      const cost = g.machineCost(t);
-      const miss = g.missingFor(cost);
-      const owned = g.machines.count(t);
-      const stats: string[] = [];
-      if (def.rate > 0) stats.push(`<span>⚡ ${t === 'robots' ? `${def.rate}/s cada` : `${def.rate}/s`}</span>`);
-      if (def.radius > 0) stats.push(`<span>◎ ${def.radius} m</span>`);
-      if (def.buffer > 0) stats.push(`<span>▣ ${def.buffer}</span>`);
-      stats.push(`<span>${def.size}×${def.size}</span>`);
-      const lockTxt = def.unlock ? `Requer: ${UPGRADE_MAP[def.unlock].name}` : '';
-      html += `<div class="card ${unl ? '' : 'locked'}"><div class="top"><img src="${this.machineThumb(t)}" alt=""/><div class="info"><div class="t">${def.name}${owned ? ` <span class="own">×${owned}</span>` : ''}</div><div class="stats">${stats.join('')}</div></div></div>
-        <div class="d">${esc(def.desc)}</div>
-        <div class="foot">${unl ? `<div class="costs">${this.costHtml(cost)}</div><button class="btn ${miss ? 'disabled' : 'green'}" data-b="${t}">${miss ? 'Faltam recursos' : 'Construir'}</button>` : `<div class="lock">🔒 ${esc(lockTxt)}</div>`}</div>
-        ${unl && miss ? `<div class="miss">${esc(miss)}</div>` : ''}</div>`;
+    let html = `<div class="flowhint"><b>Como funciona:</b> máquinas de <b>coleta</b> tiram o lixo → a <b>logística</b> leva até o depósito (ou elas ficam no círculo azul) → o <b>processamento</b> faz o pátio do depósito dar conta.<div class="yardline">Pátio do depósito: <b>${fmtInt(g.yardTotal)} / ${fmtInt(g.yardCap())}</b> · vazão <b>${fmtShort(g.processRate())}/s</b></div></div>`;
+    const roles: MachineRole[] = ['coleta', 'logistica', 'processamento', 'deposito'];
+    for (const role of roles) {
+      const types = BUILD_ORDER.filter((t) => MACHINES[t].role === role);
+      if (!types.length) continue;
+      html += `<h3 class="role role-${role}">${ROLE_NAMES[role]}</h3><div class="grid">`;
+      for (const t of types) {
+        const def = MACHINES[t];
+        const unl = g.isUnlocked(t);
+        const cost = g.machineCost(t);
+        const miss = g.missingFor(cost);
+        const owned = g.machines.count(t);
+        const stats: string[] = [];
+        if (def.rate > 0) stats.push(`<span>⚡ ${t === 'robots' ? `${def.rate}/s cada` : `${def.rate}/s`}</span>`);
+        if (def.radius > 0 && def.role === 'coleta') stats.push(`<span>◎ ${def.radius} m</span>`);
+        if (def.role === 'coleta') stats.push(def.heavy ? `<span class="hv">🏋 ergue pesado</span>` : `<span class="lt">só leve</span>`);
+        if (def.process > 0) stats.push(`<span>⚙ +${def.process}/s</span>`, `<span>▦ +${def.yard} pátio</span>`);
+        if (def.buffer > 0) stats.push(`<span>▣ ${def.buffer}</span>`);
+        stats.push(`<span>${def.size}×${def.size}</span>`);
+        const lockTxt = def.unlock ? `Requer: ${UPGRADE_MAP[def.unlock].name}` : '';
+        html += `<div class="card ${unl ? '' : 'locked'}"><div class="top"><img src="${this.machineThumb(t)}" alt=""/><div class="info"><div class="t">${def.name}${owned ? ` <span class="own">×${owned}</span>` : ''}</div><div class="stats">${stats.join('')}</div></div></div>
+          <div class="func">${esc(def.func)}</div>
+          <div class="d">${esc(def.desc)}</div>
+          <div class="foot">${unl ? `<div class="costs">${this.costHtml(cost)}</div><button class="btn ${miss ? 'disabled' : 'green'}" data-b="${t}">${miss ? 'Faltam recursos' : 'Construir'}</button>` : `<div class="lock">🔒 ${esc(lockTxt)}</div>`}</div>
+          ${unl && miss ? `<div class="miss">${esc(miss)}</div>` : ''}</div>`;
+      }
+      html += `</div>`;
     }
-    html += `</div>`;
     body.innerHTML = html;
     body.querySelectorAll('[data-b]').forEach((b) => b.addEventListener('click', () => {
       const t = (b as HTMLElement).dataset.b as MachineType;

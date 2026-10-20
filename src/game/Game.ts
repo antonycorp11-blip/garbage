@@ -56,6 +56,10 @@ export class Game {
 
   money = 0;
   storage = emptyMats();
+  /** materials delivered by machines, waiting to be processed by the depots */
+  yard = emptyMats();
+  private yardAcc = 0;
+  heavyWarnT = 0;
   autoSell = [true, true, true, true, true, true];
   reserve = [0, 60, 0, 0, 20, 0];
   toolTier = 0;
@@ -102,7 +106,9 @@ export class Game {
       world: this.world,
       get d() { return game.d; },
       get fx() { return game.fx; },
-      deliver: (m, s, x, y) => this.deliver(m, s, x, y),
+      deliver: (m, s, x, y, direct) => this.deliver(m, s, x, y, direct),
+      yardSpace: () => this.yardSpace(),
+      yardBusy: () => this.yardTotal > 0.5,
       isVisible: (x, y) => this.isVisible(x, y),
       onMachineRemoved: () => {},
     });
@@ -152,7 +158,32 @@ export class Game {
   }
 
   // ------------------------------------------------------------------ economy
-  deliver(mats: number[], sortedFrac: number, fromX: number, fromY: number) {
+  get yardTotal() { return sumMats(this.yard); }
+
+  yardCap(): number {
+    let cap = 0;
+    for (const m of this.machines.machines) cap += MACHINES[m.type].yard;
+    return cap + this.d.yardBonus;
+  }
+
+  /** units per second the depots can process (sort, weigh, sell) */
+  processRate(): number {
+    let r = 0;
+    for (const m of this.machines.machines) r += MACHINES[m.type].process * (m.type === 'crusher' ? 1 + 0.5 * (m.level - 1) : 1);
+    return r + this.d.processBonus;
+  }
+
+  yardSpace() { return Math.max(0, Math.floor(this.yardCap() - this.yardTotal)); }
+
+  /**
+   * Machines deliver into the yard (processed over time). The player's own unloading,
+   * separated belts and special sources are already sorted and go straight to storage.
+   */
+  deliver(mats: number[], sortedFrac: number, fromX: number, fromY: number, direct = false) {
+    if (!direct && sortedFrac <= 0) {
+      for (let k = 0; k < MAT_COUNT; k++) this.yard[k] += mats[k];
+      return;
+    }
     let value = 0;
     for (let k = 0; k < MAT_COUNT; k++) {
       if (!mats[k]) continue;
@@ -165,6 +196,21 @@ export class Game {
       if (fromX >= 0 && this.isVisible(fromX, fromY) && bonus >= 1) this.fx.text(fromX, fromY - 10, '+$' + Math.round(bonus), '#7CFC9A');
     }
     this.autoSellNow();
+  }
+
+  private processYard(dt: number) {
+    const total = this.yardTotal;
+    if (total <= 0) { this.yardAcc = 0; return; }
+    this.yardAcc += this.processRate() * dt;
+    let n = Math.min(total, Math.floor(this.yardAcc));
+    if (n <= 0) return;
+    this.yardAcc -= n;
+    const out = emptyMats();
+    for (let k = 0; k < MAT_COUNT && n > 0; k++) {
+      const v = Math.min(this.yard[k], Math.max(1, Math.round((this.yard[k] / total) * n)));
+      out[k] = v; this.yard[k] -= v; n -= v;
+    }
+    this.deliver(out, 0, -1, -1, true);
   }
 
   earn(v: number) {
@@ -228,6 +274,10 @@ export class Game {
   /** Why a machine cannot be placed there, or null if it can. */
   placeProblem(type: MachineType, tx: number, ty: number): string | null {
     const size = MACHINES[type].size;
+    if (MACHINES[type].needsService) {
+      const inS = this.machines.hubs().some((h) => Math.hypot(centerX(h) - tx - size / 2, centerY(h) - ty - size / 2) <= hubRadius(h, this.d));
+      if (!inS) return 'Precisa ficar dentro do círculo de um depósito';
+    }
     for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
       const ax = tx + x, ay = ty + y;
       if (!inWorld(ax, ay)) return 'Fora do terreno';
@@ -297,9 +347,9 @@ export class Game {
   demolish(m: Machine) {
     if (!MACHINES[m.type].buildable) return;
     // empty buffer first
-    if (m.bufferTotal > 0) this.deliver(m.buffer.slice(), 0, -1, -1);
-    for (const pk of m.belt) { const mats = emptyMats(); mats[pk.mat] = pk.units; this.deliver(mats, 0, -1, -1); }
-    for (const b of m.bots) if (b.carryTotal) this.deliver(b.carry.slice(), 0, -1, -1);
+    if (m.bufferTotal > 0) this.deliver(m.buffer.slice(), 0, -1, -1, true);
+    for (const pk of m.belt) { const mats = emptyMats(); mats[pk.mat] = pk.units; this.deliver(mats, 0, -1, -1, true); }
+    for (const b of m.bots) if (b.carryTotal) this.deliver(b.carry.slice(), 0, -1, -1, true);
     this.machines.remove(m);
     const refund = Math.floor(this.machineCost(m.type).money / MACHINES[m.type].costGrowth * 0.5);
     this.earn(refund);
@@ -432,6 +482,31 @@ export class Game {
     return best;
   }
 
+  /** Picks a machine up to move it elsewhere (its load goes to the depot). */
+  pickUp(m: Machine): { type: MachineType; level: number; dir: number; tx: number; ty: number } | null {
+    if (!MACHINES[m.type].buildable) return null;
+    if (m.bufferTotal > 0) this.deliver(m.buffer.slice(), 0, -1, -1, true);
+    for (const pk of m.belt) { const mats = emptyMats(); mats[pk.mat] = pk.units; this.deliver(mats, 0, -1, -1, true); }
+    for (const b of m.bots) if (b.carryTotal) this.deliver(b.carry.slice(), 0, -1, -1, true);
+    this.machines.remove(m);
+    this.fx.burst(centerX(m) * TILE, centerY(m) * TILE, 'dust', 10);
+    this.fx.sound('click');
+    return { type: m.type, level: m.level, dir: m.dir, tx: m.tx, ty: m.ty };
+  }
+
+  /** Places a picked-up machine again, free of charge. */
+  placeMoved(type: MachineType, tx: number, ty: number, level: number, dir: number, force = false): string | null {
+    const p = force ? null : this.placeProblem(type, tx, ty);
+    if (p) return p;
+    const m = this.machines.create(type, tx, ty, dir, level);
+    m.built = 0;
+    const s = MACHINES[type].size;
+    this.fx.burst((tx + s / 2) * TILE, (ty + s / 2) * TILE, 'build', 12);
+    this.fx.sound('build');
+    if (type === 'recycler') this.recompute();
+    return null;
+  }
+
   emptyMachineIntoBackpack(m: Machine): number {
     const free = this.d.capacity - this.player.carried;
     if (free <= 0 || m.bufferTotal <= 0) return 0;
@@ -523,6 +598,7 @@ export class Game {
     this.updatePlayer(dt, input);
     this.updateCollection(dt, input);
     this.machines.update(dt);
+    this.processYard(dt);
     this.updatePassive(dt);
     this.updateInteract(dt, input);
     this.updateDiscoveries(dt);
@@ -538,6 +614,7 @@ export class Game {
     const before = this.world.remaining;
     for (let t = 0; t < seconds; t += step) {
       this.machines.update(step);
+      this.processYard(step);
       this.updatePassive(step, true);
       this.updateDiscoveries(step, true);
     }
@@ -574,6 +651,7 @@ export class Game {
     if (ml > 0.1) p.setFacing(mx, my);
     if (p.action > 0) p.action = Math.max(0, p.action - dt * 3.2);
     p.fullWarnT -= dt;
+    this.heavyWarnT -= dt;
   }
 
   private aimDir(input: InputState): [number, number] {
@@ -586,6 +664,17 @@ export class Game {
     return [p.fx, p.fy];
   }
 
+  private warnHeavy(tx: number, ty: number) {
+    if (this.heavyWarnT > 0) return;
+    this.heavyWarnT = 4;
+    this.fx.text((tx + 0.5) * TILE, ty * TILE, 'Pesado demais!', '#fdba74');
+    this.fx.sound('error');
+    if (!this.flags.heavyTip) {
+      this.flags.heavyTip = true;
+      this.notify('Essa base de entulho é pesada demais para as mãos. A Garra Mecânica (Ferramentas) ou um Braço Mecânico conseguem erguer.');
+    }
+  }
+
   findSingleTarget(input: InputState): number {
     const p = this.player;
     const reach = this.tool.reach * this.d.reachMult;
@@ -595,14 +684,18 @@ export class Game {
     const aim = input.aim;
     if (aim) {
       const mtx = Math.floor(aim.x / TILE), mty = Math.floor(aim.y / TILE);
-      if (inWorld(mtx, mty) && w.garbage[tileIndex(mtx, mty)] > 0 && Math.hypot(mtx + 0.5 - px, mty + 0.5 - py) <= reach + 0.35) return tileIndex(mtx, mty);
+      const mi = inWorld(mtx, mty) ? tileIndex(mtx, mty) : -1;
+      if (mi >= 0 && Math.hypot(mtx + 0.5 - px, mty + 0.5 - py) <= reach + 0.35) {
+        if (this.canLiftHeavy ? w.garbage[mi] > 0 : w.lightAvailable(mi) > 0) return mi;
+        if (w.garbage[mi] > 0 && input.collect) this.warnHeavy(mtx, mty);
+      }
     }
     const [ax, ay] = this.aimDir(input);
     const R = Math.ceil(reach + 1);
     for (let y = Math.floor(py) - R; y <= Math.floor(py) + R; y++) for (let x = Math.floor(px) - R; x <= Math.floor(px) + R; x++) {
       if (!inWorld(x, y)) continue;
       const i = tileIndex(x, y);
-      if (w.garbage[i] === 0) continue;
+      if (w.garbage[i] === 0 || (!this.canLiftHeavy && w.lightAvailable(i) === 0)) continue;
       const dx = x + 0.5 - px, dy = y + 0.5 - py;
       const dist = Math.hypot(dx, dy);
       if (dist > reach + 0.35) continue;
@@ -614,8 +707,12 @@ export class Game {
     return best;
   }
 
-  private takeForPlayer(tile: number, n: number, bias = false): number {
+  get canLiftHeavy() { return this.toolTier >= 2; }
+
+  private takeForPlayer(tile: number, n: number, bias = false, light = false): number {
     const p = this.player;
+    if (light || !this.canLiftHeavy) n = Math.min(n, this.world.lightAvailable(tile));
+    if (n <= 0) return 0;
     const free = this.d.capacity - p.carried;
     if (free <= 0) {
       if (p.fullWarnT <= 0) {
@@ -732,7 +829,7 @@ export class Game {
         for (let y = -1; y <= 1 && !done; y++) for (let x = -1; x <= 1; x++) {
           if (!inWorld(tx + x, ty + y)) continue;
           const i = tileIndex(tx + x, ty + y);
-          if (w.garbage[i] > 0) { this.takeForPlayer(i, Math.floor(this.autoAcc)); done = true; break; }
+          if (w.lightAvailable(i) > 0) { this.takeForPlayer(i, Math.floor(this.autoAcc), false, true); done = true; break; }
         }
         this.autoAcc -= Math.floor(this.autoAcc);
       }
@@ -758,7 +855,7 @@ export class Game {
             if (!offline && this.isVisible((tx + 0.5) * TILE, (ty + 0.5) * TILE)) this.fx.removed(i, before, before - r, (tx + 0.5) * TILE, (ty - 6) * TILE);
           } else this.orbitalCursor = (this.orbitalCursor + 1) % N;
         }
-        this.deliver(mats, 0, -1, -1);
+        this.deliver(mats, 0, -1, -1, true);
       }
     }
   }
@@ -793,7 +890,7 @@ export class Game {
         for (let k = 1; k < MAT_COUNT; k++) if (out[k] > out[mat]) mat = k;
         this.fx.fly(p.x, p.y - 14, centerX(hub) * TILE, centerY(hub) * TILE - 8, mat);
         this.fx.sound('unload');
-        this.deliver(out, 0, -1, -1);
+        this.deliver(out, 0, -1, -1, true);
         if (p.carried <= 0) { p.carried = 0; p.backpack.fill(0); }
       }
     } else this.unloadAcc = 0;
@@ -806,7 +903,7 @@ export class Game {
         const out = p.backpack.slice();
         p.backpack.fill(0);
         p.carried = 0;
-        this.deliver(out, 0, -1, -1);
+        this.deliver(out, 0, -1, -1, true);
         const h = this.machines.nearestHub(p.tx, p.ty) ?? this.depot;
         this.fx.drone(p.x, p.y, centerX(h) * TILE, centerY(h) * TILE);
         this.fx.sound('drone');

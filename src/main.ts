@@ -17,7 +17,7 @@ import './ui/style.css';
 interface Settings { music: number; sfx: number; quality: number; ranges: boolean }
 const SETTINGS_KEY = 'garbage-kingdom-settings';
 
-interface BuildState extends BuildPreview { painting: boolean; lastTx: number; lastTy: number; placedId: number; drag: { sx: number; sy: number; tx: number; ty: number } | null }
+interface BuildState extends BuildPreview { painting: boolean; lastTx: number; lastTy: number; placedId: number; drag: { sx: number; sy: number; tx: number; ty: number } | null; moving: { level: number; fromTx: number; fromTy: number; fromDir: number } | null }
 
 export class App implements PointerSink {
   game: Game;
@@ -121,14 +121,33 @@ export class App implements PointerSink {
       const spot = this.game.findSpot(type, p.tx, p.ty);
       if (spot) { tx = spot.tx; ty = spot.ty; }
     }
-    this.build = { type, tx, ty, dir: this.build?.dir ?? 0, problem: null, painting: false, lastTx: -1, lastTy: -1, placedId: -1, drag: null };
+    this.build = { type, tx, ty, dir: this.build?.dir ?? 0, problem: null, painting: false, lastTx: -1, lastTy: -1, placedId: -1, drag: null, moving: null };
     this.ui.select(null);
+    this.updateGhostProblem();
+    this.ui.showBuildBar();
+  }
+
+  /** Pick a machine up and enter build mode to put it somewhere else (free). */
+  startMove(m: import('./game/Machines').Machine) {
+    const info = this.game.pickUp(m);
+    if (!info) return;
+    this.ui.select(null);
+    const s = MACHINES[info.type].size;
+    let tx = info.tx, ty = info.ty;
+    const p = this.game.player;
+    const spot = this.game.findSpot(info.type, p.tx, p.ty);
+    if (spot && this.input.touch) { tx = spot.tx; ty = spot.ty; }
+    void s;
+    this.build = { type: info.type, tx, ty, dir: info.dir, problem: null, painting: false, lastTx: -1, lastTy: -1, placedId: -1, drag: null, moving: { level: info.level, fromTx: info.tx, fromTy: info.ty, fromDir: info.dir } };
     this.updateGhostProblem();
     this.ui.showBuildBar();
   }
 
   cancelBuild() {
     if (!this.build) return;
+    const mv = this.build.moving;
+    // a machine being moved goes back to where it was
+    if (mv) this.game.placeMoved(this.build.type, mv.fromTx, mv.fromTy, mv.level, mv.fromDir, true);
     this.build = null;
     this.ui.showBuildBar();
   }
@@ -142,7 +161,7 @@ export class App implements PointerSink {
   private updateGhostProblem() {
     const b = this.build;
     if (!b) return;
-    b.problem = this.game.placeProblem(b.type, b.tx, b.ty) ?? this.game.missingFor(this.game.machineCost(b.type));
+    b.problem = this.game.placeProblem(b.type, b.tx, b.ty) ?? (b.moving ? null : this.game.missingFor(this.game.machineCost(b.type)));
   }
 
   private ghostAt(sx: number, sy: number) {
@@ -156,6 +175,15 @@ export class App implements PointerSink {
 
   private place(): boolean {
     const b = this.build!;
+    if (b.moving) {
+      const e = this.game.placeMoved(b.type, b.tx, b.ty, b.moving.level, b.dir);
+      if (e) { this.audio.play('error'); this.fx.text((b.tx + 0.5) * TILE, b.ty * TILE - 14, e, '#fca5a5'); return false; }
+      const placed = this.game.machines.at(b.tx, b.ty);
+      this.build = null;
+      this.ui.showBuildBar();
+      if (placed) this.ui.select(placed);
+      return true;
+    }
     const err = this.game.build(b.type, b.tx, b.ty, b.dir);
     if (err) {
       this.audio.play('error');

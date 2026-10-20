@@ -514,3 +514,31 @@ body.touch .msg { font-size: 12px; line-height: 1.25; }
 .bb-pad .pad:active { background: rgba(255,176,46,.3); }
 .bb-pad .pad.rot { background: rgba(255,176,46,.18); color: var(--accent); }
 .mpanel .acts .wide { flex-basis: 100%; }
+
+/* machine roles & depot yard */
+.flowhint { font-size: 13px; font-weight: 700; color: var(--muted); background: rgba(255,176,46,.08); border: 1px solid rgba(255,176,46,.25); border-radius: 12px; padding: 10px 12px; margin-bottom: 6px; line-height: 1.4; }
+.flowhint b { color: var(--text); }
+.flowhint .yardline { margin-top: 6px; color: #fde68a; }
+h3.role { font-family: var(--display); font-weight: 400; font-size: 17px; margin: 16px 2px 8px; letter-spacing: .3px; }
+h3.role-coleta { color: #ffb02e; } h3.role-logistica { color: #38bdf8; } h3.role-processamento { color: #4ade80; } h3.role-deposito { color: #c084fc; }
+.card .func { font-size: 13px; font-weight: 900; color: #fde68a; }
+.card .stats .hv { background: rgba(251,146,60,.25); color: #fdba74; }
+.card .stats .lt { background: rgba(148,163,184,.18); }
+.chip.yard { flex-direction: column; align-items: stretch; gap: 4px; font-size: 12px; }
+.chip.yard .row { display: flex; justify-content: space-between; }
+.chip.yard .bar { height: 7px; border-radius: 4px; background: #0009; overflow: hidden; }
+.chip.yard .bar i { display: block; height: 100%; background: linear-gradient(90deg, #4ade80, #a3e635); transition: width .2s; }
+.chip.yard.warn .bar i { background: linear-gradient(90deg, #facc15, #fb923c); }
+.chip.yard.full { border-color: #ef444488; animation: pulse 1.2s infinite; }
+.chip.yard.full .bar i { background: linear-gradient(90deg, #f97316, #ef4444); }
+@media (max-width: 760px), (max-height: 520px) {
+  .chip.yard { font-size: 10px; padding: 4px 8px; }
+}
+@media (max-width: 760px) and (orientation: portrait) {
+  .hud-left { flex-wrap: wrap; }
+  .hud-left .chip.yard { flex-basis: 100%; }
+}
+@media (max-width: 760px) and (orientation: portrait) {
+  body.has-yard .goal { top: calc(166px + var(--safe-t)); }
+  body.has-yard .msgs { top: calc(192px + var(--safe-t)); }
+}

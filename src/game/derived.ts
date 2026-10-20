@@ -22,6 +22,8 @@ export interface Derived {
   value: number[];
   sepBonus: number;
   serviceBonus: number;
+  processBonus: number;
+  yardBonus: number;
   costMult: number;
 }
 
@@ -58,6 +60,8 @@ export function computeDerived({ up, flags, recyclers }: DerivedInput): Derived 
     value: MATERIALS.map((m, i) => m.value * valueBase * (i === M_METAL || i === M_ELEC ? 1 + 0.25 * L('r_metal') : 1)),
     sepBonus: 0.35 * (1 + 0.2 * L('r_sepbonus')),
     serviceBonus: 2 * L('r_depot'),
+    processBonus: 6 * L('r_depot'),
+    yardBonus: 120 * L('r_depot'),
     costMult: 1 - 0.07 * L('r_discount'),
   };
 }

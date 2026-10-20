@@ -65,6 +65,17 @@ export class World {
 
   get removed() { return TOTAL_GARBAGE - this.remaining; }
 
+  /** Units at the base of a dense pile that only heavy equipment can lift. */
+  heavyFloor(tile: number): number {
+    const init = this.initial[tile];
+    return init >= HEAVY_MIN ? Math.floor(init * HEAVY_FRAC) : 0;
+  }
+
+  /** Units a light remover (hands, shovel, collectors, robots) can still take from a tile. */
+  lightAvailable(tile: number): number {
+    return Math.max(0, this.garbage[tile] - this.heavyFloor(tile));
+  }
+
   at(tx: number, ty: number): number {
     return inWorld(tx, ty) ? this.garbage[tileIndex(tx, ty)] : 0;
   }
@@ -147,3 +158,6 @@ export class World {
 }
 
 export const TOTAL = TOTAL_GARBAGE;
+/** Dense piles (initial >= HEAVY_MIN) have a heavy base of HEAVY_FRAC of their units. */
+export const HEAVY_MIN = 34;
+export const HEAVY_FRAC = 0.3;

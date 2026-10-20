@@ -1,76 +1,108 @@
 export type MachineType = 'collector' | 'arm' | 'conveyor' | 'separator' | 'crusher' | 'robots' | 'excavator' | 'recycler' | 'ancient' | 'depot';
 
+export type MachineRole = 'coleta' | 'logistica' | 'processamento' | 'deposito';
+
 export interface MachineDef {
   type: MachineType;
   name: string;
   short: string;
+  role: MachineRole;
+  /** one line: what problem this machine solves */
+  func: string;
   desc: string;
   size: number;
   money: number;
   mats: number[];
   costGrowth: number;
+  /** garbage removed per second (collection machines) */
   rate: number;
   radius: number;
   buffer: number;
+  /** can lift heavy rubble (the base of dense piles) */
+  heavy: boolean;
+  /** units/s the depot yard processes thanks to this building */
+  process: number;
+  /** extra yard capacity */
+  yard: number;
+  /** must be built inside a depot's service circle */
+  needsService: boolean;
   unlock: string | null;
   solid: boolean;
   buildable: boolean;
 }
 
+const D = { heavy: false, process: 0, yard: 0, needsService: false };
+
 export const MACHINES: Record<MachineType, MachineDef> = {
   collector: {
-    type: 'collector', name: 'Coletor Automático', short: 'Coletor', size: 1, money: 120, mats: [0, 15, 0, 0, 0, 0], costGrowth: 1.13,
-    rate: 1.3, radius: 3, buffer: 60, unlock: null, solid: false, buildable: true,
-    desc: 'Pequeno, barulhento e incansável. Suga o lixo ao redor e guarda numa caçamba.',
+    ...D, type: 'collector', name: 'Coletor Automático', short: 'Coletor', role: 'coleta', size: 1, money: 120, mats: [0, 15, 0, 0, 0, 0], costGrowth: 1.13,
+    rate: 2.5, radius: 3.5, buffer: 80, unlock: null, solid: false, buildable: true,
+    func: 'Aspira o lixo leve ao redor. Não ergue entulho pesado.',
+    desc: 'A primeira automação: barato, incansável e barulhento. Deixa para trás a base pesada das pilhas.',
   },
   arm: {
-    type: 'arm', name: 'Braço Mecânico', short: 'Braço', size: 1, money: 900, mats: [0, 45, 0, 0, 8, 0], costGrowth: 1.14,
-    rate: 4.5, radius: 2.3, buffer: 140, unlock: 'a_arm', solid: false, buildable: true,
-    desc: 'Um braço hidráulico que agarra objetos próximos com precisão cirúrgica e zero empatia.',
+    ...D, type: 'arm', name: 'Braço Mecânico', short: 'Braço', role: 'coleta', size: 1, money: 900, mats: [0, 45, 0, 0, 8, 0], costGrowth: 1.14,
+    rate: 5, radius: 3, buffer: 160, heavy: true, unlock: 'a_arm', solid: false, buildable: true,
+    func: 'Remove entulho pesado: a base das pilhas que coletores e robôs não conseguem.',
+    desc: 'Geladeiras, motores e carcaças? Ele ergue. Coloque no meio das pilhas grandes que sobraram.',
   },
   conveyor: {
-    type: 'conveyor', name: 'Esteira Transportadora', short: 'Esteira', size: 1, money: 6, mats: [0, 1, 0, 0, 0, 0], costGrowth: 1,
+    ...D, type: 'conveyor', name: 'Esteira Transportadora', short: 'Esteira', role: 'logistica', size: 1, money: 6, mats: [0, 1, 0, 0, 0, 0], costGrowth: 1,
     rate: 0, radius: 0, buffer: 0, unlock: 'a_belts', solid: false, buildable: true,
-    desc: 'Leva materiais das máquinas até o depósito. Arraste para construir em linha.',
+    func: 'Leva o material de máquinas distantes até o depósito.',
+    desc: 'Sem ela, máquinas fora do círculo do depósito enchem a caçamba e param. Dica: use "Conectar ao depósito" no painel da máquina.',
   },
   separator: {
-    type: 'separator', name: 'Separador de Materiais', short: 'Separador', size: 1, money: 1800, mats: [0, 60, 0, 0, 30, 0], costGrowth: 1.25,
+    ...D, type: 'separator', name: 'Separador de Materiais', short: 'Separador', role: 'processamento', size: 1, money: 1800, mats: [0, 60, 0, 0, 30, 0], costGrowth: 1.25,
     rate: 0, radius: 0, buffer: 0, unlock: 'r_sep', solid: false, buildable: true,
-    desc: 'Instale no meio de uma esteira. Classifica o que passa e aumenta o valor pago no depósito.',
+    func: 'Separa o que passa na esteira: chega pronto, não ocupa o pátio e vale mais.',
+    desc: 'Instale no meio de uma esteira que vai até o depósito. Essencial para linhas grandes não lotarem o pátio.',
   },
   crusher: {
-    type: 'crusher', name: 'Triturador Industrial', short: 'Triturador', size: 2, money: 15000, mats: [0, 400, 0, 0, 60, 0], costGrowth: 1.3,
-    rate: 32, radius: 5.2, buffer: 900, unlock: 'a_crusher', solid: true, buildable: true,
-    desc: 'Mastiga pilhas inteiras. Faz um barulho que assusta até as ratazanas.',
+    ...D, type: 'crusher', name: 'Triturador Industrial', short: 'Triturador', role: 'processamento', size: 2, money: 4000, mats: [0, 180, 0, 0, 30, 0], costGrowth: 1.3,
+    rate: 0, radius: 0, buffer: 0, process: 25, yard: 350, needsService: true, unlock: 'a_crusher', solid: true, buildable: true,
+    func: 'Processa o pátio do depósito: +25/s de vazão e +350 de espaço.',
+    desc: 'Quando o pátio lota, as máquinas param de entregar. O triturador mastiga a fila. Precisa ficar dentro do círculo do depósito.',
   },
   robots: {
-    type: 'robots', name: 'Estação de Robôs Catadores', short: 'Robôs', size: 1, money: 6000, mats: [0, 120, 0, 0, 80, 0], costGrowth: 1.28,
-    rate: 6, radius: 12, buffer: 600, unlock: 'a_robots', solid: false, buildable: true,
-    desc: 'Robôs autônomos voam até o lixo, enchem a barriga e voltam para a estação.',
+    ...D, type: 'robots', name: 'Estação de Robôs Catadores', short: 'Robôs', role: 'coleta', size: 1, money: 6000, mats: [0, 120, 0, 0, 80, 0], costGrowth: 1.28,
+    rate: 8, radius: 14, buffer: 800, unlock: 'a_robots', solid: false, buildable: true,
+    func: 'Drones caçam lixo leve espalhado numa área grande e trazem para a estação.',
+    desc: 'Perfeitos para os restos que as máquinas fixas não alcançam. Preferem pilhas pequenas e espalhadas.',
   },
   excavator: {
-    type: 'excavator', name: 'Escavadeira Automatizada', short: 'Escavadeira', size: 2, money: 120000, mats: [0, 2500, 0, 0, 400, 0], costGrowth: 1.35,
-    rate: 90, radius: 22, buffer: 5000, unlock: 'a_excav', solid: true, buildable: true,
-    desc: 'Uma garagem com uma escavadeira que não precisa de motorista nem de café.',
+    ...D, type: 'excavator', name: 'Escavadeira Automatizada', short: 'Escavadeira', role: 'coleta', size: 2, money: 120000, mats: [0, 2500, 0, 0, 400, 0], costGrowth: 1.35,
+    rate: 60, radius: 24, buffer: 5000, heavy: true, unlock: 'a_excav', solid: true, buildable: true,
+    func: 'Demole as montanhas mais densas, inclusive o entulho pesado, em alta velocidade.',
+    desc: 'Vai direto nas maiores pilhas da área. Gera tanto material que vai precisar de esteiras e trituradores.',
   },
   recycler: {
-    type: 'recycler', name: 'Central de Reciclagem', short: 'Central', size: 3, money: 400000, mats: [3000, 6000, 3000, 3000, 1500, 0], costGrowth: 2.5,
-    rate: 0, radius: 10, buffer: 0, unlock: 'r_center', solid: true, buildable: true,
-    desc: 'Um novo depósito: recebe materiais e esteiras, +15% valor dos materiais e +10% velocidade das máquinas (até 3).',
+    ...D, type: 'recycler', name: 'Central de Reciclagem', short: 'Central', role: 'deposito', size: 3, money: 400000, mats: [3000, 6000, 3000, 3000, 1500, 0], costGrowth: 2.5,
+    rate: 0, radius: 10, buffer: 0, process: 300, yard: 3000, unlock: 'r_center', solid: true, buildable: true,
+    func: 'Um novo depósito gigante: +300/s de vazão, recebe esteiras e dá +15% de valor.',
+    desc: 'Para o fluxo massivo do fim do jogo. Também acelera as máquinas em 10% (até 3 centrais).',
   },
   ancient: {
-    type: 'ancient', name: 'Coletor Ancestral', short: 'Ancestral', size: 1, money: 0, mats: [0, 0, 0, 0, 0, 0], costGrowth: 1,
-    rate: 6, radius: 5, buffer: 0, unlock: null, solid: false, buildable: false,
+    ...D, type: 'ancient', name: 'Coletor Ancestral', short: 'Ancestral', role: 'coleta', size: 1, money: 0, mats: [0, 0, 0, 0, 0, 0], costGrowth: 1,
+    rate: 6, radius: 5, buffer: 0, heavy: true, unlock: null, solid: false, buildable: false,
+    func: 'Coleta qualquer coisa e entrega direto no depósito.',
     desc: 'Ninguém sabe quem construiu. O material coletado aparece direto no depósito.',
   },
   depot: {
-    type: 'depot', name: 'Depósito Improvisado', short: 'Depósito', size: 3, money: 0, mats: [0, 0, 0, 0, 0, 0], costGrowth: 1,
-    rate: 0, radius: 6, buffer: 0, unlock: null, solid: true, buildable: false,
-    desc: 'Lona, estacas e uma balança enferrujada. Descarregue aqui. Máquinas próximas entregam sozinhas.',
+    ...D, type: 'depot', name: 'Depósito Improvisado', short: 'Depósito', role: 'deposito', size: 3, money: 0, mats: [0, 0, 0, 0, 0, 0], costGrowth: 1,
+    rate: 0, radius: 6, buffer: 0, process: 10, yard: 250, unlock: null, solid: true, buildable: false,
+    func: 'Recebe e processa os materiais. Máquinas no círculo entregam sozinhas.',
+    desc: 'Lona, estacas e uma balança enferrujada. Descarregue aqui.',
   },
 };
 
-export const BUILD_ORDER: MachineType[] = ['collector', 'arm', 'conveyor', 'separator', 'robots', 'crusher', 'excavator', 'recycler'];
+export const BUILD_ORDER: MachineType[] = ['collector', 'arm', 'robots', 'excavator', 'conveyor', 'separator', 'crusher', 'recycler'];
+export const ROLE_NAMES: Record<MachineRole, string> = {
+  coleta: 'Coleta — tiram o lixo do terreno',
+  logistica: 'Logística — levam o material até o depósito',
+  processamento: 'Processamento — o depósito dar conta de tudo',
+  deposito: 'Depósitos',
+};
 export const MAX_MACHINE_LEVEL = 5;
 
 export function machineUpgradeCost(type: MachineType, level: number): number {

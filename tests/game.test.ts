@@ -161,4 +161,45 @@ describe('Game', () => {
     expect(m.linked).toBe(true);
     expect(sumMats(g.storage)).toBeGreaterThan(st0);
   });
+
+  it('light machines leave the heavy base of dense piles; heavy ones lift it', () => {
+    const g = new Game();
+    g.money = 1e9; g.storage = [1e6, 1e6, 1e6, 1e6, 1e6, 0];
+    g.upgrades.a_arm = 1; g.recompute();
+    // find a dense tile with a clean spot next to it
+    let tile = -1;
+    for (let i = 0; i < g.world.garbage.length && tile < 0; i++) if (g.world.initial[i] >= 40) tile = i;
+    const tx = tile % WORLD_TILES, ty = Math.floor(tile / WORLD_TILES);
+    clearArea(g, tx + 1, ty, tx + 1, ty);
+    const floor = g.world.heavyFloor(tile);
+    expect(floor).toBeGreaterThan(0);
+    expect(g.build('collector', tx + 1, ty)).toBeNull();
+    const c = g.machines.machines.find((m) => m.type === 'collector')!;
+    for (let i = 0; i < 3000; i++) { g.update(0.5, idle); c.buffer.fill(0); c.bufferTotal = 0; }
+    expect(g.world.garbage[tile]).toBe(floor);
+    g.machines.remove(c);
+    expect(g.build('arm', tx + 1, ty)).toBeNull();
+    const a = g.machines.machines.find((m) => m.type === 'arm')!;
+    for (let i = 0; i < 3000; i++) { g.update(0.5, idle); a.buffer.fill(0); a.bufferTotal = 0; }
+    expect(g.world.garbage[tile]).toBe(0);
+  });
+
+  it('the depot yard fills up and crushers raise its throughput', () => {
+    const g = new Game();
+    g.autoSell = [false, false, false, false, false, false];
+    const cap = g.yardCap(), rate = g.processRate();
+    g.deliver([cap, 0, 0, 0, 0, 0], 0, -1, -1);
+    expect(g.yardSpace()).toBe(0);
+    for (let i = 0; i < 10; i++) g.update(0.1, idle);
+    expect(g.yardTotal).toBeLessThan(cap);
+    expect(g.storage[0]).toBeGreaterThan(0);
+    g.money = 1e9; g.storage = [1e6, 1e6, 1e6, 1e6, 1e6, 0];
+    g.upgrades.a_arm = 1; g.upgrades.a_crusher = 1; g.recompute();
+    clearArea(g, CENTER + 3, CENTER - 4, CENTER + 4, CENTER - 3);
+    expect(g.build('crusher', CENTER + 3, CENTER - 4)).toBeNull();
+    expect(g.processRate()).toBeGreaterThan(rate);
+    expect(g.yardCap()).toBeGreaterThan(cap);
+    clearArea(g, CENTER + 40, CENTER, CENTER + 41, CENTER + 1);
+    expect(g.build('crusher', CENTER + 40, CENTER)).not.toBeNull(); // must be inside a depot circle
+  });
 });

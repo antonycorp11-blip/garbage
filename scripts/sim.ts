@@ -25,7 +25,7 @@ function nearestDirty(): number {
   for (let y = Math.max(0, Math.floor(p.ty) - R); y < Math.min(WORLD_TILES, Math.floor(p.ty) + R); y++)
     for (let x = Math.max(0, Math.floor(p.tx) - R); x < Math.min(WORLD_TILES, Math.floor(p.tx) + R); x++) {
       const i = tileIndex(x, y);
-      if (!g.world.garbage[i]) continue;
+      if (!g.world.garbage[i] || (!g.canLiftHeavy && g.world.lightAvailable(i) === 0)) continue;
       const d = (x + 0.5 - p.tx) ** 2 + (y + 0.5 - p.ty) ** 2;
       if (d < bd) { bd = d; best = i; }
     }
@@ -94,18 +94,56 @@ function placeOnSpine(type: MachineType): boolean {
   return false;
 }
 
+// like a real player now: build where the action is and auto-connect with conveyors
+function placeAtFront(type: MachineType): boolean {
+  const p = g.player;
+  const spot = g.findSpot(type, p.tx, p.ty);
+  if (!spot) return false;
+  if (g.build(type, spot.tx, spot.ty)) return false;
+  const m = g.machines.at(spot.tx, spot.ty)!;
+  g.machines.relink();
+  if (!m.inService && g.isUnlocked('conveyor')) {
+    if (g.connectToDepot(m)) { g.demolish(m); return false; }
+  } else if (!m.inService) { g.demolish(m); return false; }
+  return true;
+}
+
 const prio = ['c_bag', 'c_speed', 'a_arm', 'r_value', 'c_unload', 'a_speed', 'c_force', 'c_move', 'r_depot', 'a_buffer', 'c_auto', 'a_radius', 'c_reach', 'a_belts', 'c_remote', 'r_rare', 'c_treasure', 'a_robots', 'a_robotcount', 'r_sep', 'r_discount', 'a_crusher', 'r_metal', 'a_excav', 'r_sepbonus', 'r_center', 'a_integr', 'c_radar', 'r_quality', 'c_orbital'];
+
+function relocateIdle() {
+  const p = g.player;
+  const idle = g.machines.machines.find((m) => (m.type === 'collector' || m.type === 'arm' || m.type === 'robots' || m.type === 'excavator') && m.status === 'idle' && m.built >= 1);
+  if (!idle) return;
+  const info = g.pickUp(idle)!;
+  const spot = g.findSpot(info.type, p.tx, p.ty);
+  if (!spot || g.placeMoved(info.type, spot.tx, spot.ty, info.level, info.dir)) { g.placeMoved(info.type, info.tx, info.ty, info.level, info.dir, true); return; }
+  const m = g.machines.at(spot.tx, spot.ty)!;
+  g.machines.relink();
+  if (!m.inService && g.isUnlocked('conveyor')) g.connectToDepot(m);
+}
+
+function upgradeMachines() {
+  for (const m of g.machines.machines) {
+    if (m.level < 5 && ['collector', 'arm', 'robots', 'excavator', 'crusher'].includes(m.type) && !g.upgradeMachine(m)) return;
+  }
+}
 
 function shop() {
   extendSpines();
+  relocateIdle();
+  if (Math.random() < 0.3) upgradeMachines();
   // tools
   const nt = g.toolTier + 1;
   if (nt < TOOLS.length && g.money >= g.toolCost(nt)) { g.buyTool(nt); log(`ferramenta: ${TOOLS[nt].name}`); return; }
+  // processing: keep the depot yard flowing
+  if (g.yardTotal > g.yardCap() * 0.6 && g.isUnlocked('crusher') && !g.missingFor(g.machineCost('crusher'))) {
+    if (placeNearHub('crusher')) { first('mcrusher', 'primeiro triturador'); return; }
+  }
   // machines (keep a ratio)
-  for (const type of ['excavator', 'crusher', 'robots', 'arm', 'collector'] as MachineType[]) {
+  for (const type of ['excavator', 'robots', 'arm', 'collector'] as MachineType[]) {
     if (!g.isUnlocked(type)) continue;
     if (g.missingFor(g.machineCost(type))) continue;
-    if (placeOnSpine(type) || placeNearHub(type)) { first('m' + type, `primeira máquina: ${MACHINES[type].name}`); return; }
+    if (placeAtFront(type) || placeOnSpine(type) || placeNearHub(type)) { first('m' + type, `primeira máquina: ${MACHINES[type].name}`); return; }
   }
   // cheapest affordable upgrade from priority list
   let best: string | null = null, bc = Infinity;
@@ -161,7 +199,7 @@ while (t < MINUTES * 60 && g.remaining > 0) {
   if (t >= nextReport) {
     nextReport += 5 * 60;
     if (0) log(`pos ${g.player.tx.toFixed(1)},${g.player.ty.toFixed(1)} mode ${mode} carried ${g.player.carried} target ${target} ms ${g.machines.machines.map(m=>m.type+":"+m.status).join(",")}`);
-    log(`removido ${g.removed} (${(g.removed / 1e4).toFixed(2)}%) · ${g.ratePerSec.toFixed(1)}/s · $${Math.round(g.money)} · máquinas ${g.machines.machines.filter((m) => !isHub(m.type)).length} · ferramenta ${g.toolTier + 1} · mochila ${g.d.capacity}`);
+    log(`máquinas fizeram ${(100 * g.stats.removedMachines / Math.max(1, g.removed)).toFixed(0)}% · pátio ${Math.round(g.yardTotal)}/${g.yardCap()} @${g.processRate()}/s · removido ${g.removed} (${(g.removed / 1e4).toFixed(2)}%) · ${g.ratePerSec.toFixed(1)}/s · $${Math.round(g.money)} · máquinas ${g.machines.machines.filter((m) => !isHub(m.type)).length} · ferramenta ${g.toolTier + 1} · mochila ${g.d.capacity}`);
   }
   g.events.length = 0;
 }

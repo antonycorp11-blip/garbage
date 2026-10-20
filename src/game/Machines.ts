@@ -45,7 +45,10 @@ export interface MachineHost {
   world: World;
   d: Derived;
   fx: FX;
-  deliver(mats: number[], sortedFrac: number, fromX: number, fromY: number): void;
+  deliver(mats: number[], sortedFrac: number, fromX: number, fromY: number, direct?: boolean): void;
+  /** free units in the depot yard */
+  yardSpace(): number;
+  yardBusy(): boolean;
   isVisible(x: number, y: number): boolean;
   onMachineRemoved(n: number): void;
 }
@@ -196,24 +199,28 @@ export class MachineSystem {
     }
   }
 
+  /** Units this machine can take from a tile (light machines leave the heavy base of dense piles). */
+  avail(m: Machine, tile: number): number {
+    const w = this.host.world;
+    return MACHINES[m.type].heavy ? w.garbage[tile] : w.lightAvailable(tile);
+  }
+
   /** Removes up to n units from the nearest dirty tiles of a machine's area into out. Returns removed. */
   harvest(m: Machine, n: number, out: number[]): number {
     this.ensureTargets(m);
-    const w = this.host.world, t = m.targets!;
+    const t = m.targets!;
     let got = 0;
     let guard = 0;
     while (got < n && m.cursor < t.length && guard++ < 64) {
       const tile = t[m.cursor];
-      if (w.garbage[tile] === 0 || this.reserved.has(tile)) {
-        if (w.garbage[tile] === 0) m.cursor++;
-        else { // skip reserved tiles without losing them
-          let k = m.cursor + 1;
-          while (k < t.length && (w.garbage[t[k]] === 0 || this.reserved.has(t[k]))) k++;
-          if (k >= t.length) break;
-          got += this.take(m, t[k], n - got, out);
-          break;
-        }
-        continue;
+      if (this.avail(m, tile) === 0) { m.cursor++; continue; }
+      if (this.reserved.has(tile)) {
+        // skip reserved tiles without losing them
+        let k = m.cursor + 1;
+        while (k < t.length && (this.avail(m, t[k]) === 0 || this.reserved.has(t[k]))) k++;
+        if (k >= t.length) break;
+        got += this.take(m, t[k], n - got, out);
+        break;
       }
       got += this.take(m, tile, n - got, out);
     }
@@ -223,7 +230,7 @@ export class MachineSystem {
   private take(m: Machine, tile: number, n: number, out: number[]): number {
     const w = this.host.world;
     const before = w.garbage[tile];
-    const r = w.remove(tile, n, 'machine');
+    const r = w.remove(tile, Math.min(n, this.avail(m, tile)), 'machine');
     if (r > 0) {
       w.rollMaterials(tile, r, this.host.d.rareChance, out);
       m.lastTarget = tile;
@@ -238,8 +245,8 @@ export class MachineSystem {
 
   hasWork(m: Machine): boolean {
     this.ensureTargets(m);
-    const t = m.targets!, w = this.host.world;
-    while (m.cursor < t.length && w.garbage[t[m.cursor]] === 0) m.cursor++;
+    const t = m.targets!;
+    while (m.cursor < t.length && this.avail(m, t[m.cursor]) === 0) m.cursor++;
     return m.cursor < t.length;
   }
 
@@ -251,7 +258,8 @@ export class MachineSystem {
       m.anim += dt;
       m.built = Math.min(1, m.built + dt * 1.5);
       switch (m.type) {
-        case 'collector': case 'arm': case 'crusher': case 'ancient': this.updateStatic(m, dt, d); break;
+        case 'collector': case 'arm': case 'ancient': this.updateStatic(m, dt, d); break;
+        case 'crusher': m.status = this.host.yardBusy() ? 'working' : 'idle'; break;
         case 'robots': case 'excavator': this.updateBots(m, dt, d); break;
         case 'conveyor': case 'separator': this.updateBelt(m, dt, d); break;
         default: break;
@@ -275,7 +283,7 @@ export class MachineSystem {
     if (got > 0) {
       m.collected += got;
       if (m.type === 'ancient') {
-        this.host.deliver(out, 0, centerX(m) * TILE, centerY(m) * TILE);
+        this.host.deliver(out, 0, centerX(m) * TILE, centerY(m) * TILE, true);
       } else {
         for (let k = 0; k < MAT_COUNT; k++) m.buffer[k] += out[k];
         m.bufferTotal += got;
@@ -321,7 +329,7 @@ export class MachineSystem {
           for (const tile of tiles) {
             if (got >= n) break;
             const bb = w.garbage[tile];
-            const r = w.remove(tile, Math.ceil((n - got) / (tile === b.target ? 1 : 2)), 'machine');
+            const r = w.remove(tile, Math.min(this.avail(m, tile), Math.ceil((n - got) / (tile === b.target ? 1 : 2))), 'machine');
             if (r > 0) {
               w.rollMaterials(tile, r, d.rareChance, b.carry);
               got += r;
@@ -334,7 +342,7 @@ export class MachineSystem {
           this.removedAcc += got;
         }
         if (b.carryTotal >= cap) { this.release(b); b.state = BOT_RETURN; }
-        else if (w.garbage[b.target] === 0) {
+        else if (this.avail(m, b.target) === 0) {
           this.release(b);
           const nt = this.neighborTarget(m, b);
           if (nt >= 0) { b.target = nt; this.reserved.add(nt); b.state = BOT_GO; }
@@ -387,18 +395,25 @@ export class MachineSystem {
 
   private pickBotTarget(m: Machine): number {
     this.ensureTargets(m);
-    const t = m.targets!, w = this.host.world;
-    while (m.cursor < t.length && w.garbage[t[m.cursor]] === 0) m.cursor++;
+    const t = m.targets!;
+    while (m.cursor < t.length && this.avail(m, t[m.cursor]) === 0) m.cursor++;
     const cands: number[] = [];
-    for (let k = m.cursor; k < t.length && cands.length < 24 && k < m.cursor + 400; k++) {
-      if (w.garbage[t[k]] > 0 && !this.reserved.has(t[k])) cands.push(t[k]);
+    for (let k = m.cursor; k < t.length && cands.length < 40 && k < m.cursor + 600; k++) {
+      if (this.avail(m, t[k]) > 0 && !this.reserved.has(t[k])) cands.push(t[k]);
     }
     if (!cands.length) return -1;
-    return cands[Math.floor(Math.random() * Math.min(cands.length, m.type === 'excavator' ? 3 : 24))];
+    const w = this.host.world;
+    if (m.type === 'excavator') {
+      // the excavator goes for the biggest piles
+      cands.sort((a, b) => w.garbage[b] - w.garbage[a]);
+      return cands[Math.floor(Math.random() * Math.min(3, cands.length))];
+    }
+    // drones prefer small, scattered leftovers
+    cands.sort((a, b) => this.avail(m, a) - this.avail(m, b));
+    return cands[Math.floor(Math.random() * Math.min(8, cands.length))];
   }
 
   private neighborTarget(m: Machine, b: Bot): number {
-    const w = this.host.world;
     const r = machineRadius(m, this.host.d);
     const cx = centerX(m), cy = centerY(m);
     const bx = Math.floor(b.x), by = Math.floor(b.y);
@@ -406,7 +421,7 @@ export class MachineSystem {
       const tx = bx + x, ty = by + y;
       if (!inWorld(tx, ty)) continue;
       const t = tileIndex(tx, ty);
-      if (w.garbage[t] > 0 && !this.reserved.has(t) && Math.hypot(tx + 0.5 - cx, ty + 0.5 - cy) <= r) return t;
+      if (this.avail(m, t) > 0 && !this.reserved.has(t) && Math.hypot(tx + 0.5 - cx, ty + 0.5 - cy) <= r) return t;
     }
     return -1;
   }
@@ -425,6 +440,7 @@ export class MachineSystem {
       const next = this.at(m.tx + DX[m.dir], m.ty + DY[m.dir]);
       if (!next) return;
       if (isHub(next.type)) {
+        if (!p[0].sorted && this.host.yardSpace() < p[0].units) { m.status = 'full'; return; }
         const pk = p.shift()!;
         const mats = emptyMats();
         mats[pk.mat] = pk.units;
@@ -442,7 +458,9 @@ export class MachineSystem {
 
   private deliverFrom(m: Machine, dt: number) {
     if (m.inService) {
-      const n = Math.min(m.bufferTotal, Math.max(1, Math.floor(SERVICE_RATE * dt * (1 + m.level * 0.5) + Math.random())));
+      const space = this.host.yardSpace();
+      if (space <= 0) return;
+      const n = Math.min(m.bufferTotal, space, Math.max(1, Math.floor(SERVICE_RATE * dt * (1 + m.level * 0.5) + Math.random())));
       const out = this.takeFromBuffer(m, n);
       const hub = this.nearestHub(centerX(m), centerY(m));
       m.deliverT -= dt;

@@ -11,6 +11,7 @@ export interface SaveData {
   garbage: string;
   money: number;
   storage: number[];
+  yard?: number[];
   autoSell: boolean[];
   reserve: number[];
   toolTier: number;
@@ -36,6 +37,7 @@ export function serialize(g: Game): SaveData {
     garbage: g.world.serializeGarbage(),
     money: g.money,
     storage: g.storage.slice(),
+    yard: g.yard.slice(),
     autoSell: g.autoSell.slice(),
     reserve: g.reserve.slice(),
     toolTier: g.toolTier,
@@ -62,6 +64,7 @@ export function applySave(g: Game, raw: unknown): void {
   if (typeof s.garbage !== 'string' || !g.world.loadGarbage(s.garbage)) throw new Error('mundo corrompido');
   g.money = Math.max(0, num(s.money));
   g.storage = mats(s.storage);
+  g.yard = mats(s.yard);
   if (Array.isArray(s.autoSell)) g.autoSell = Array.from({ length: MAT_COUNT }, (_, i) => s.autoSell[i] !== false);
   g.reserve = mats(s.reserve);
   g.toolTier = Math.max(0, Math.min(TOOLS.length - 1, Math.floor(num(s.toolTier))));
