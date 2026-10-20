@@ -17,14 +17,14 @@ import { SkillTree } from './SkillTree';
 import type { App } from '../main';
 
 type Tab = 'upgrades' | 'build' | 'tools' | 'inventory' | 'map' | 'stats' | 'settings';
-const TABS: { id: Tab; name: string; icon: string }[] = [
-  { id: 'upgrades', name: 'Melhorias', icon: ICONS.upgrades },
-  { id: 'build', name: 'Construir', icon: ICONS.build },
-  { id: 'tools', name: 'Ferramentas', icon: ICONS.tools },
-  { id: 'inventory', name: 'Depósito', icon: ICONS.inventory },
-  { id: 'map', name: 'Mapa', icon: ICONS.map },
-  { id: 'stats', name: 'Estatísticas', icon: ICONS.stats },
-  { id: 'settings', name: 'Opções', icon: ICONS.settings },
+const TABS: { id: Tab; name: string; short: string; icon: string }[] = [
+  { id: 'upgrades', name: 'Árvore de Melhorias', short: 'Melhorias', icon: ICONS.upgrades },
+  { id: 'build', name: 'Construir Máquinas', short: 'Construir', icon: ICONS.build },
+  { id: 'tools', name: 'Ferramentas', short: 'Ferram.', icon: ICONS.tools },
+  { id: 'inventory', name: 'Depósito', short: 'Depósito', icon: ICONS.inventory },
+  { id: 'map', name: 'Mapa do Reino', short: 'Mapa', icon: ICONS.map },
+  { id: 'stats', name: 'Estatísticas', short: 'Números', icon: ICONS.stats },
+  { id: 'settings', name: 'Opções', short: 'Opções', icon: ICONS.settings },
 ];
 
 const h = (html: string) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild as HTMLElement; };
@@ -145,7 +145,13 @@ export class UI {
       ib.textContent = ctx.kind === 'special' ? 'ABRIR' : ctx.kind === 'machine' ? (ctx.label.startsWith('Esvaziar') ? 'ESVAZIAR' : 'VER') : ctx.kind === 'depot' ? 'VENDER' : 'INTERAGIR';
     }
     this.refreshT -= dt;
-    if (this.modalTab && this.refreshT <= 0) { this.refreshT = 0.5; this.renderModal(false); }
+    if (this.modalTab && this.refreshT <= 0) {
+      this.refreshT = 0.5;
+      this.renderModal(false);
+      const mm = this.modalEl?.querySelector('.mt-money');
+      if (mm) mm.textContent = fmtMoney(this.game.money);
+    }
+    if (this.app.build && this.hudT === 0.1) this.refreshBuildBar();
     this.mpanelT -= dt;
     if (this.mpanelT <= 0) { this.mpanelT = 0.25; this.renderMachinePanel(); }
     this.mapT -= dt;
@@ -183,10 +189,13 @@ export class UI {
     const [text, from] = this.msgQueue.shift()!;
     this.msgBusy = performance.now() + 1200;
     const initials = from.split(/\s+/).filter((w) => /^[A-ZÁ-Ú]/.test(w)).map((w) => w[0]).join('').slice(0, 2) || '?';
-    const m = h(`<div class="msg"><div class="av">${esc(initials)}</div><div><div class="from">${esc(from)}</div><div>${esc(text)}</div></div></div>`);
+    const m = h(`<div class="msg pe"><div class="av">${esc(initials)}</div><div><div class="from">${esc(from)}</div><div>${esc(text)}</div></div></div>`);
     box.appendChild(m);
     const life = Math.min(12000, 4000 + text.length * 50);
-    setTimeout(() => { m.classList.add('out'); setTimeout(() => { m.remove(); this.pumpMessages(); }, 400); }, life);
+    let gone = false;
+    const dismiss = () => { if (gone) return; gone = true; m.classList.add('out'); setTimeout(() => { m.remove(); this.pumpMessages(); }, 400); };
+    m.addEventListener('pointerdown', (e) => { e.stopPropagation(); dismiss(); });
+    setTimeout(dismiss, life);
     if (this.msgQueue.length) setTimeout(() => this.pumpMessages(), 1300);
   }
 
@@ -194,16 +203,36 @@ export class UI {
   showBuildBar() {
     const b = this.app.build;
     const bar = this.el.buildbar;
+    document.body.classList.toggle('building', !!b);
     if (!b) { bar.style.display = 'none'; return; }
     const def = MACHINES[b.type];
     const cost = this.game.machineCost(b.type);
+    const belt = isBelt(b.type);
     bar.style.display = 'flex';
-    bar.innerHTML = `<span class="name">${def.name}</span><span class="cost">${this.costHtml(cost)}</span>
-      ${isBelt(b.type) ? `<button class="btn ghost" data-a="rot">↻ Girar <span class="key desk-only">R</span></button>` : ''}
-      <span class="muted desk-only" style="font-size:12px">${isBelt(b.type) ? 'Clique e arraste para fazer a linha' : 'Clique para construir'}</span>
-      <button class="btn ghost" data-a="cancel">✕ Sair <span class="key desk-only">Esc</span></button>`;
+    bar.innerHTML = `<div class="bb-h"><span class="name">${def.name}</span><span class="cost">${this.costHtml(cost)}</span></div>
+      <div class="bb-msg"></div>
+      <div class="bb-a">
+        ${belt ? `<button class="btn ghost" data-a="rot">↻ Girar <span class="key desk-only">R</span></button>` : ''}
+        <button class="btn ghost" data-a="cancel">✕ Sair <span class="key desk-only">Esc</span></button>
+        ${belt ? '' : `<button class="btn green mobile-only" data-a="ok">✓ Construir aqui</button>`}
+      </div>`;
     bar.querySelector('[data-a=cancel]')?.addEventListener('click', () => this.app.cancelBuild());
     bar.querySelector('[data-a=rot]')?.addEventListener('click', () => { this.app.rotateBuild(); });
+    bar.querySelector('[data-a=ok]')?.addEventListener('click', () => this.app.confirmBuild());
+    this.refreshBuildBar();
+  }
+
+  refreshBuildBar() {
+    const b = this.app.build;
+    if (!b) return;
+    const bar = this.el.buildbar;
+    const touch = document.body.classList.contains('touch');
+    const belt = isBelt(b.type);
+    const msg = bar.querySelector('.bb-msg') as HTMLElement | null;
+    const tip = belt ? (touch ? 'Arraste o dedo para desenhar a esteira' : 'Clique e arraste para fazer a linha') : touch ? 'Arraste o dedo para posicionar' : 'Clique para construir';
+    if (msg) { msg.textContent = b.problem ? '⚠ ' + b.problem : tip; msg.classList.toggle('bad', !!b.problem); }
+    const ok = bar.querySelector('[data-a=ok]') as HTMLElement | null;
+    if (ok) ok.classList.toggle('disabled', !!b.problem);
   }
 
   private costHtml(cost: { money: number; mats: number[] }) {
@@ -225,7 +254,8 @@ export class UI {
     const m = this.selected;
     const p = this.el.mpanel;
     const g = this.game;
-    if (!m || !g.machines.byId.has(m.id) || this.modalTab) { p.style.display = 'none'; if (m && !g.machines.byId.has(m.id)) this.select(null); return; }
+    if (!m || !g.machines.byId.has(m.id) || this.modalTab) { p.style.display = 'none'; document.body.classList.remove('panel-open'); if (m && !g.machines.byId.has(m.id)) this.select(null); return; }
+    document.body.classList.add('panel-open');
     const def = MACHINES[m.type];
     p.style.display = 'block';
     const d = g.d;
@@ -251,7 +281,7 @@ export class UI {
     if (m.collected > 0) kv.push(`<span>Total coletado</span><span>${fmtInt(m.collected)}</span>`);
     if (delivery) kv.push(`<span>Entrega</span><span>${delivery}</span>`);
     if (isBelt(m.type)) kv.push(`<span>Pacotes</span><span>${m.belt.length}</span>`);
-    p.innerHTML = `<div class="h"><b>${def.name}</b>${def.buildable && m.type !== 'conveyor' ? `<span class="lvl">Nv ${m.level}/${MAX_MACHINE_LEVEL}</span>` : ''}<button class="close" data-a="x" style="width:32px;height:32px">✕</button></div>
+    p.innerHTML = `<div class="grab"></div><div class="h"><b>${def.name}</b>${def.buildable && m.type !== 'conveyor' ? `<span class="lvl">Nv ${m.level}/${MAX_MACHINE_LEVEL}</span>` : ''}<button class="close" data-a="x" style="width:32px;height:32px">✕</button></div>
       <div class="kv">${kv.join('')}</div>
       <div class="st ${cls}">${status}</div>
       <div class="acts">
@@ -276,23 +306,30 @@ export class UI {
   openModal(tab: Tab) {
     if (this.popupOpen) return;
     this.app.cancelBuild();
+    this.select(null);
     if (!this.modalEl) {
-      const wrap = h(`<div class="modal-wrap"><div class="modal"><div class="modal-h"></div><div class="modal-b"></div></div></div>`);
+      const wrap = h(`<div class="modal-wrap"><div class="modal"><nav class="modal-nav"></nav><div class="modal-main"><div class="modal-top"><span class="mt-ic"></span><span class="mt-title"></span><span class="mt-money"></span><button class="close" aria-label="Fechar">✕</button></div><div class="modal-b"></div></div></div></div>`);
       wrap.addEventListener('pointerdown', (e) => { if (e.target === wrap) this.closeModal(); });
+      wrap.querySelector('.close')!.addEventListener('click', () => { this.app.audio.play('click'); this.closeModal(); });
       this.el.layer.appendChild(wrap);
       this.modalEl = wrap;
+      document.body.classList.add('modal-open');
     }
     this.modalTab = tab;
-    const head = this.modalEl.querySelector('.modal-h')!;
-    head.innerHTML = TABS.map((t) => `<button class="tab ${t.id === tab ? 'on' : ''}" data-tab="${t.id}">${t.icon}<span>${t.name}</span></button>`).join('') + `<button class="close">✕</button>`;
-    head.querySelectorAll('.tab').forEach((b) => b.addEventListener('click', () => { this.app.audio.play('click'); this.openModal((b as HTMLElement).dataset.tab as Tab); }));
-    head.querySelector('.close')!.addEventListener('click', () => this.closeModal());
+    const t = TABS.find((x) => x.id === tab)!;
+    const nav = this.modalEl.querySelector('.modal-nav')!;
+    nav.innerHTML = TABS.map((x) => `<button class="nav ${x.id === tab ? 'on' : ''}" data-tab="${x.id}">${x.icon}<span>${x.short}</span></button>`).join('');
+    nav.querySelectorAll('.nav').forEach((b) => b.addEventListener('click', () => { this.app.audio.play('click'); this.openModal((b as HTMLElement).dataset.tab as Tab); }));
+    this.modalEl.querySelector('.mt-ic')!.innerHTML = t.icon;
+    this.modalEl.querySelector('.mt-title')!.textContent = t.name;
+    this.modalEl.querySelector('.mt-money')!.textContent = fmtMoney(this.game.money);
     this.modalEl.querySelector('.modal')!.classList.toggle('tree-mode', tab === 'upgrades');
     (this.modalEl.querySelector('.modal-b') as HTMLElement).scrollTop = 0;
     this.renderModal(true);
   }
 
   closeModal() {
+    document.body.classList.remove('modal-open');
     this.modalEl?.remove();
     this.modalEl = null;
     this.modalTab = null;
@@ -354,7 +391,7 @@ export class UI {
 
   private renderBuild(body: HTMLElement) {
     const g = this.game;
-    let html = `<h2>Construir Máquinas</h2><p class="lead">Máquinas só podem ser construídas em terreno limpo. Perto do depósito (círculo azul) elas entregam sozinhas; longe, precisam de esteiras.</p><div class="grid">`;
+    let html = `<p class="lead">Construa em terreno limpo. Dentro do círculo azul do depósito as máquinas entregam sozinhas; longe dele, use esteiras.</p><div class="grid">`;
     for (const t of BUILD_ORDER) {
       const def = MACHINES[t];
       const unl = g.isUnlocked(t);
@@ -362,14 +399,15 @@ export class UI {
       const miss = g.missingFor(cost);
       const owned = g.machines.count(t);
       const stats: string[] = [];
-      if (def.rate > 0) stats.push(`⚡ ${t === 'robots' ? `${def.rate}/s por robô` : `${def.rate}/s`}`);
-      if (def.radius > 0) stats.push(`◎ ${def.radius} m`);
-      if (def.buffer > 0) stats.push(`▣ ${def.buffer}`);
-      stats.push(`Tamanho ${def.size}×${def.size}`);
-      const lockTxt = def.unlock ? `Requer melhoria: ${UPGRADE_MAP[def.unlock].name}` : '';
-      html += `<div class="card ${unl ? '' : 'locked'}">${owned ? `<span class="badge">×${owned}</span>` : ''}<div class="top"><img src="${this.machineThumb(t)}" style="width:72px;height:72px;border-radius:10px;background:radial-gradient(circle at 50% 40%, #5a4632, #2a1f15)"/><div><div class="t">${def.name}</div><div class="stats">${stats.join(' · ')}</div></div></div>
+      if (def.rate > 0) stats.push(`<span>⚡ ${t === 'robots' ? `${def.rate}/s cada` : `${def.rate}/s`}</span>`);
+      if (def.radius > 0) stats.push(`<span>◎ ${def.radius} m</span>`);
+      if (def.buffer > 0) stats.push(`<span>▣ ${def.buffer}</span>`);
+      stats.push(`<span>${def.size}×${def.size}</span>`);
+      const lockTxt = def.unlock ? `Requer: ${UPGRADE_MAP[def.unlock].name}` : '';
+      html += `<div class="card ${unl ? '' : 'locked'}"><div class="top"><img src="${this.machineThumb(t)}" alt=""/><div class="info"><div class="t">${def.name}${owned ? ` <span class="own">×${owned}</span>` : ''}</div><div class="stats">${stats.join('')}</div></div></div>
         <div class="d">${esc(def.desc)}</div>
-        ${unl ? `<div class="costs">${this.costHtml(cost)}</div><button class="btn ${miss ? 'disabled' : 'green'}" data-b="${t}">${miss ? esc(miss) : 'Construir'}</button>` : `<div class="d" style="color:var(--bad)">🔒 ${esc(lockTxt)}</div>`}</div>`;
+        <div class="foot">${unl ? `<div class="costs">${this.costHtml(cost)}</div><button class="btn ${miss ? 'disabled' : 'green'}" data-b="${t}">${miss ? 'Faltam recursos' : 'Construir'}</button>` : `<div class="lock">🔒 ${esc(lockTxt)}</div>`}</div>
+        ${unl && miss ? `<div class="miss">${esc(miss)}</div>` : ''}</div>`;
     }
     html += `</div>`;
     body.innerHTML = html;
@@ -401,16 +439,15 @@ export class UI {
 
   private renderTools(body: HTMLElement) {
     const g = this.game;
-    let html = `<h2>Ferramentas</h2><p class="lead">Cada ferramenta muda a forma de coletar. As de área funcionam segurando o botão enquanto você caminha.</p><div class="grid">`;
+    let html = `<p class="lead">Cada ferramenta muda o jeito de coletar. As de área funcionam segurando COLETAR enquanto você anda.</p><div class="grid">`;
     TOOLS.forEach((t, i) => {
       const owned = i <= g.toolTier;
       const next = i === g.toolTier + 1;
       const cost = g.toolCost(i);
-      const stat = t.mode === 'single' ? `${t.units} obj/ação · alcance ${t.reach} m` : `${t.rate}/s em área · raio ${t.radius} m`;
-      html += `<div class="card ${owned || next ? '' : 'locked'}">${i === g.toolTier ? '<span class="badge cur">EQUIPADA</span>' : owned ? '<span class="badge">✓</span>' : ''}
-        <div class="top"><img src="${this.toolThumb(i)}" style="width:72px;height:72px;border-radius:10px;background:radial-gradient(circle at 50% 40%, ${t.color}55, #2a1f15)"/><div><div class="t">${i + 1}. ${t.name}</div><div class="stats">${stat}</div></div></div>
+      const stat = t.mode === 'single' ? `<span>${t.units} obj/ação</span><span>alcance ${t.reach} m</span>` : `<span>${t.rate}/s em área</span><span>raio ${t.radius} m</span>`;
+      html += `<div class="card ${owned || next ? '' : 'locked'} ${i === g.toolTier ? 'current' : ''}"><div class="top"><img src="${this.toolThumb(i)}" alt="" style="background:radial-gradient(circle at 50% 40%, ${t.color}55, #2a1f15)"/><div class="info"><div class="t">${i + 1}. ${t.name}${i === g.toolTier ? ' <span class="own cur">EQUIPADA</span>' : owned ? ' <span class="own">✓</span>' : ''}</div><div class="stats">${stat}</div></div></div>
         <div class="d">${esc(t.desc)}</div>
-        ${next ? `<button class="btn ${g.money < cost ? 'disabled' : 'green'}" data-t="${i}">Comprar ${fmtMoney(cost)}</button>` : !owned ? `<div class="d">${fmtMoney(cost)} · requer a anterior</div>` : ''}
+        ${next ? `<div class="foot"><div class="costs"><span class="cost ${g.money < cost ? 'no' : ''}">${fmtMoney(cost)}</span></div><button class="btn ${g.money < cost ? 'disabled' : 'green'}" data-t="${i}">Comprar</button></div>` : !owned ? `<div class="foot"><div class="lock">${fmtMoney(cost)} · compre a anterior primeiro</div></div>` : ''}
       </div>`;
     });
     html += `</div>`;
@@ -432,16 +469,14 @@ export class UI {
       const m = MATERIALS[k];
       const val = g.storage[k] * g.d.value[k];
       total += val;
-      rows += `<tr><td><span class="matname"><i class="matsw" style="background:${m.color}"></i>${m.name}</span></td>
-        <td>${fmtInt(g.storage[k])}<div class="muted" style="font-size:11px">mochila: ${fmtInt(p.backpack[k])}</div></td>
-        <td class="muted">${fmtMoney(g.d.value[k])}/un</td>
-        <td><button class="toggle ${g.autoSell[k] ? 'on' : ''}" data-auto="${k}">${g.autoSell[k] ? 'Auto-venda ✓' : 'Auto-venda ✗'}</button>
-        <button class="toggle" data-res="${k}" title="Quantidade guardada para construções">Guardar ${fmtShort(g.reserve[k])}</button></td>
-        <td><button class="btn ${g.storage[k] > 0 ? '' : 'disabled'}" data-sell="${k}">Vender ${fmtMoney(val)}</button></td></tr>`;
+      rows += `<div class="mat"><div class="mat-h"><i class="matsw" style="background:${m.color}"></i><div class="mat-n"><b>${m.name}</b><small>${fmtMoney(g.d.value[k])} por unidade</small></div><div class="mat-q"><b>${fmtInt(g.storage[k])}</b><small>${p.backpack[k] ? `+${fmtInt(p.backpack[k])} na mochila` : 'no depósito'}</small></div></div>
+        <div class="mat-a"><button class="toggle ${g.autoSell[k] ? 'on' : ''}" data-auto="${k}">${g.autoSell[k] ? '✓ Auto-venda' : '✗ Auto-venda'}</button>
+        <button class="toggle" data-res="${k}" title="Quantidade guardada para construções">Guardar ${fmtShort(g.reserve[k])}</button>
+        <button class="btn ${g.storage[k] > 0 ? '' : 'disabled'}" data-sell="${k}">Vender ${fmtMoney(val)}</button></div></div>`;
     }
-    body.innerHTML = `<h2>Depósito</h2><p class="lead">Materiais entregues ficam aqui. A auto-venda converte o excedente em dinheiro, mas guarda a reserva para construir máquinas.</p>
-      <div class="row" style="margin-bottom:6px"><button class="btn green" data-sellall>Vender tudo (${fmtMoney(total)})</button><span class="muted">Mochila: ${fmtInt(p.carried)}/${fmtInt(g.d.capacity)}${p.carried > 0 ? ' — volte ao depósito para descarregar' : ''}</span></div>
-      <table class="inv">${rows}</table>`;
+    body.innerHTML = `<p class="lead">A auto-venda transforma o excedente em dinheiro e guarda a reserva para construir máquinas.</p>
+      <div class="inv-top"><button class="btn green" data-sellall>Vender tudo · ${fmtMoney(total)}</button><span class="muted">Mochila ${fmtInt(p.carried)}/${fmtInt(g.d.capacity)}${p.carried > 0 ? ' · descarregue no depósito' : ''}</span></div>
+      <div class="mats">${rows}</div>`;
     body.querySelectorAll('[data-sell]').forEach((b) => b.addEventListener('click', () => { const k = Number((b as HTMLElement).dataset.sell); g.sell(k, g.storage[k]); this.renderModal(false); }));
     body.querySelector('[data-sellall]')?.addEventListener('click', () => { g.sellAll(); this.renderModal(false); });
     body.querySelectorAll('[data-auto]').forEach((b) => b.addEventListener('click', () => { const k = Number((b as HTMLElement).dataset.auto); g.autoSell[k] = !g.autoSell[k]; g.autoSellNow(); this.app.audio.play('click'); this.renderModal(false); }));

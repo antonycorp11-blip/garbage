@@ -205,18 +205,21 @@ export class SkillTree {
 
   fit() {
     const w = this.svgEl.clientWidth || 800, h = this.svgEl.clientHeight || 500;
-    const panel = this.detail.offsetHeight + 24;
+    const sideMode = this.detail.offsetWidth < this.el.clientWidth * 0.6 && this.detail.offsetHeight > this.el.clientHeight * 0.6;
+    const panel = sideMode ? 0 : this.detail.offsetHeight + 24;
+    const panelW = sideMode ? this.detail.offsetWidth + 16 : 0;
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const n of this.nodes.values()) { x0 = Math.min(x0, n.x); y0 = Math.min(y0, n.y); x1 = Math.max(x1, n.x); y1 = Math.max(y1, n.y); }
     x0 -= 80; x1 += 80; y0 -= 70; y1 += 110;
     const avail = h - panel;
-    this.view.s = Math.max(0.3, Math.min(1.1, Math.min(w / (x1 - x0), avail / (y1 - y0))));
-    this.view.x = w / 2 - ((x0 + x1) / 2) * this.view.s;
+    const aw = w - panelW;
+    this.view.s = Math.max(0.3, Math.min(1.1, Math.min(aw / (x1 - x0), avail / (y1 - y0))));
+    this.view.x = aw / 2 - ((x0 + x1) / 2) * this.view.s;
     this.view.y = avail / 2 - ((y0 + y1) / 2) * this.view.s + 6;
     if (this.view.s < 0.62 && !this.fittedOnce) {
       // first open: readable zoom centered near the root, the player can pan/zoom out
       this.view.s = 0.62;
-      this.view.x = w / 2;
+      this.view.x = aw / 2;
       this.view.y = avail / 2 + 60;
     }
     this.fittedOnce = true;

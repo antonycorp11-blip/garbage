@@ -80,6 +80,7 @@ export class Input {
       this.joy = { id: e.pointerId, ox: e.clientX, oy: e.clientY, x: 0, y: 0 };
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY, t: performance.now(), role: 'joy' });
       this.joyEl.classList.add('on');
+      document.body.classList.add('joy-used');
       this.joyEl.style.left = e.clientX + 'px';
       this.joyEl.style.top = e.clientY + 'px';
       (this.joyEl.firstElementChild as HTMLElement).style.transform = '';

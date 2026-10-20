@@ -235,10 +235,18 @@ export class App implements PointerSink {
     if (!b) return;
     if (b.painting) { b.painting = false; return; }
     if (touch) {
+      // on touch the ghost only moves; the player confirms with "Construir aqui"
       this.ghostAt(sx, sy);
-      if (!b.problem) this.place();
-      else if (tap) { this.audio.play('error'); this.fx.text((b.tx + 0.5) * TILE, b.ty * TILE - 14, b.problem, '#fca5a5'); }
+      this.ui.refreshBuildBar();
+      void tap;
     }
+  }
+
+  confirmBuild() {
+    if (!this.build) return;
+    this.updateGhostProblem();
+    if (this.build.problem) { this.audio.play('error'); this.ui.refreshBuildBar(); return; }
+    this.place();
   }
 
   cancel() {
