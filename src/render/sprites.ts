@@ -631,6 +631,47 @@ export const KIND_DEFS: Record<ItemKind, KindDef> = {
       c.strokeStyle = '#eee'; c.lineWidth = 0.3; c.beginPath(); for (let i = 0; i < 3; i++) { c.moveTo(0 + i, -2.2); c.lineTo(0.6 + i, -0.8); } c.stroke();
     },
   },
+  heap: {
+    size: 50, rots: [0, 0.04, -0.04, 0.08],
+    pal: [['#6b5236', '#e8e2d0', '#5b8fc7', '#c94f3d', '#6fae6a'], ['#2a2a2c', '#4a4a4e', '#1a1a1a', '#6b6b70', '#c94f3d'], ['#6f6a62', '#9aa3a8', '#8a5a3a', '#c0c4c6', '#e2c25a']],
+    draw(c, p, r) {
+      // a mound of compacted junk
+      shadowOn(c, 1.6);
+      c.beginPath();
+      c.moveTo(-21, 8);
+      for (let i = 0; i <= 12; i++) {
+        const t = i / 12, a = Math.PI + t * Math.PI;
+        const rr = 1 + (r() - 0.5) * 0.18;
+        c.lineTo(Math.cos(a) * 21 * rr, 6 + Math.sin(a) * 15 * rr);
+      }
+      c.lineTo(21, 8);
+      c.quadraticCurveTo(0, 13, -21, 8);
+      c.closePath();
+      c.fillStyle = p[0]; c.fill();
+      shadowOff(c);
+      c.save(); c.clip();
+      c.fillStyle = rad(c, -7, -6, 2, 26, [[0, shade(p[0], 0.35)], [0.6, p[0]], [1, shade(p[0], -0.55)]]);
+      c.fillRect(-24, -12, 48, 26);
+      for (let i = 0; i < 70; i++) {
+        const x = (r() - 0.5) * 40, y = -8 + r() * 18;
+        const col = p[1 + Math.floor(r() * 4)];
+        c.save(); c.translate(x, y); c.rotate(r() * 6.28);
+        const w = 1.2 + r() * 3.4, h = 0.8 + r() * 2;
+        c.fillStyle = 'rgba(0,0,0,0.35)'; c.fillRect(-w / 2 + 0.4, -h / 2 + 0.6, w, h);
+        c.fillStyle = col; c.fillRect(-w / 2, -h / 2, w, h);
+        c.fillStyle = 'rgba(255,255,255,0.2)'; c.fillRect(-w / 2, -h / 2, w, h * 0.35);
+        c.restore();
+      }
+      c.fillStyle = lin(c, 0, -10, 0, 10, [[0, 'rgba(255,240,210,0.12)'], [0.5, 'rgba(0,0,0,0)'], [1, 'rgba(0,0,0,0.35)']]);
+      c.fillRect(-24, -12, 48, 26);
+      c.restore();
+      // things sticking out
+      c.strokeStyle = shade(p[2], -0.2); c.lineWidth = 1.6; c.lineCap = 'round';
+      c.beginPath(); c.moveTo(-6, -3); c.lineTo(-11, -13); c.stroke();
+      c.strokeStyle = '#8a8f94'; c.lineWidth = 1.1; c.beginPath(); c.moveTo(7, -1); c.lineTo(13, -10); c.stroke();
+      c.fillStyle = p[3]; rrect(c, 1, -10, 6, 4, 1); c.fill(); c.strokeStyle = 'rgba(0,0,0,0.5)'; c.lineWidth = 0.4; c.stroke();
+    },
+  },
 };
 
 export const KINDS = Object.keys(KIND_DEFS) as ItemKind[];

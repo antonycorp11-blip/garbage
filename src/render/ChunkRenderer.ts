@@ -6,6 +6,7 @@ import { DECO_ROAD_H, DECO_ROAD_V, DECO_RUINWALL } from '../world/worldgen';
 import { GROUND_PERIOD, buildDebris, buildGrime, buildGroundTextures } from './ground';
 import { ctx2d, ellipse, lin, makeCanvas } from './paint';
 import { ItemSprites } from './sprites';
+import { drawProp, propAt } from './props';
 import { TileItem, genTileItems, visibleK } from './tileItems';
 
 const CPX = CHUNK * TILE;
@@ -110,7 +111,11 @@ export class ChunkRenderer {
       if (!inWorld(tx, ty)) continue;
       const i = tileIndex(tx, ty);
       const g = w.garbage[i];
-      if (!g) continue;
+      if (!g) {
+        // faint memory of the garbage that was here
+        if (w.initial[i] > 0) { c.globalAlpha = 0.07; c.drawImage(this.grime, (tx + 0.5) * TILE - 24, (ty + 0.5) * TILE - 24, 48, 48); }
+        continue;
+      }
       const dens = Math.min(1, g / 40);
       c.globalAlpha = 0.22 + 0.4 * dens;
       c.drawImage(this.grime, (tx + 0.5) * TILE - 30, (ty + 0.5) * TILE - 30, 60, 60);
@@ -131,6 +136,12 @@ export class ChunkRenderer {
       c.strokeStyle = 'rgba(40,30,20,0.5)'; c.lineWidth = 0.6;
       c.strokeRect(x, y + 18 - hh, TILE, 8 + hh);
       for (let k = 0; k < 3; k++) { c.beginPath(); c.moveTo(x + k * 11 + 4, y + 26 - hh); c.lineTo(x + k * 11 + 4, y + 26); c.stroke(); }
+    }
+    // revealed props (only on clean tiles), drawn top to bottom
+    for (let ty = ty0 - 1; ty < ty0 + CHUNK + 2; ty++) for (let tx = tx0 - 1; tx < tx0 + CHUNK + 1; tx++) {
+      if (!inWorld(tx, ty) || w.garbage[tileIndex(tx, ty)] > 0) continue;
+      const pr = propAt(w, tx, ty);
+      if (pr) drawProp(c, pr.kind, pr.v, tx, ty);
     }
     // garbage items
     const items = this.items;

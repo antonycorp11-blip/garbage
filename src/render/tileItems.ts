@@ -5,6 +5,8 @@ import { KIND_INDEX, ROTS, VARIANTS } from './sprites';
 
 export interface TileItem { spr: number; x: number; y: number; layer: number; order: number; scale: number }
 
+const HEAP = KIND_INDEX.heap;
+
 const regionKinds = REGIONS.map((r) => ({
   all: r.items.map(([k, w]) => [KIND_INDEX[k], w] as const),
   small: r.items.filter(([k]) => !BIG_ITEMS.has(k)).map(([k, w]) => [KIND_INDEX[k], w] as const),
@@ -26,6 +28,13 @@ export function genTileItems(region: number, tx: number, ty: number, initial: nu
   const b = Math.min(baseK(initial), to);
   const rk = regionKinds[region] ?? regionKinds[1];
   for (let i = from; i < b; i++) {
+    if (i === 0 && initial >= 34) {
+      // dense tiles sit on a mound of compacted junk
+      const hv = region === 2 ? 1 : region === 4 || region === 6 || region === 5 ? 2 : 0;
+      const hr = hash3(tx, ty, 0, 15);
+      out.push({ spr: HEAP * VARIANTS * ROTS + hv * ROTS + Math.floor(hr * ROTS), x: (tx + 0.5 + (hr - 0.5) * 0.3) * TILE, y: (ty + 0.6) * TILE, layer: -2, order: ty * WORLD_TILES + tx, scale: 0.85 + hr * 0.35 });
+      continue;
+    }
     const h1 = hash3(tx, ty, i, 11), h2 = hash3(tx, ty, i, 12), h3 = hash3(tx, ty, i, 13), h4 = hash3(tx, ty, i, 14);
     let kind = pickWeighted(i < 2 ? rk.all : rk.small, h1);
     const big = i < 2 && rk.bigSet.has(kind);

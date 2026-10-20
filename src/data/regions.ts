@@ -7,7 +7,7 @@ export type ItemKind =
   | 'bag' | 'bottle' | 'glassbottle' | 'can' | 'paper' | 'newspaper' | 'box' | 'tire' | 'chair' | 'fridge'
   | 'washer' | 'crt' | 'monitor' | 'wires' | 'brick' | 'rubble' | 'scrap' | 'barrel' | 'cardoor' | 'carwreck'
   | 'pallet' | 'sofa' | 'pipe' | 'keyboard' | 'circuit' | 'hubcap' | 'engine' | 'cone' | 'mattress' | 'tvset'
-  | 'duck' | 'shoe';
+  | 'duck' | 'shoe' | 'heap';
 
 export interface RegionDef {
   name: string;

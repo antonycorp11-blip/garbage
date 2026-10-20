@@ -235,6 +235,7 @@ export class Game {
       if (this.world.garbage[i] > 0) return `Ainda há lixo aqui (${this.world.garbage[i]})`;
       if (this.world.occupant[i] >= 0) return 'Espaço ocupado';
       if (this.world.specialAt[i] >= 0) return 'Há um objeto especial aqui';
+      if (ax === CENTER - 4 && (ay === CENTER + 1 || ay === CENTER + 2)) return 'O Sr. Valdemar está sentado aí';
       if (MACHINES[type].solid || isHub(type)) {
         for (const h of this.machines.machines) {
           if (!isHub(h.type)) continue;

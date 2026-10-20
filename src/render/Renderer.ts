@@ -9,6 +9,7 @@ import { drawAimTile, drawAreaTool, drawPlayer } from './character';
 import { drawBelt, drawBots, drawMachine, drawRange } from './machinesDraw';
 import { rad } from './paint';
 import { drawSpecialAt } from './specialsDraw';
+import { Life } from './life';
 
 export interface BuildPreview { type: MachineType; tx: number; ty: number; dir: number; problem: string | null }
 
@@ -24,12 +25,14 @@ export class Renderer {
   showRanges = false;
   selected: Machine | null = null;
   endingT = -1;
+  life: Life;
 
   constructor(canvas: HTMLCanvasElement, private game: Game, public chunks: ChunkRenderer, public fx: Effects) {
     this.canvas = canvas;
     this.c = canvas.getContext('2d', { alpha: false })!;
     this.resize();
     this.cam.x = game.player.x; this.cam.y = game.player.y;
+    this.life = new Life(game, fx);
   }
 
   resize() {
@@ -69,6 +72,7 @@ export class Renderer {
     const view = { x0: camX - hw, y0: camY - hh, x1: camX + hw, y1: camY + hh };
     g.view = view;
     this.fx.listener.x = p.x; this.fx.listener.y = p.y;
+    this.life.update(dt, time);
 
     c.setTransform(1, 0, 0, 1, 0, 0);
     c.fillStyle = '#2a2118';
@@ -133,6 +137,8 @@ export class Renderer {
     const inView = (x: number, y: number, r = pad) => x > view.x0 - r && x < view.x1 + r && y > view.y0 - r && y < view.y1 + r;
     for (const m of g.machines.machines) if (isBelt(m.type) && inView(m.tx * TILE, m.ty * TILE)) drawBelt(c, m, g, time);
 
+    this.life.drawGround(c, view, time, cam.zoom);
+
     // y-sorted objects
     type Obj = { y: number; d: () => void };
     const objs: Obj[] = [];
@@ -152,6 +158,7 @@ export class Renderer {
       if (inView((sp.tx + 1) * TILE, (sp.ty + 1) * TILE)) objs.push({ y: (sp.ty + sp.size) * TILE - 1, d: () => drawSpecialAt(c, g, s, time) });
     }
     objs.push({ y: p.y, d: () => drawPlayer(c, g, time) });
+    for (const o of this.life.objects(view, time)) objs.push({ y: o.y, d: () => o.d(c) });
     objs.sort((a, b) => a.y - b.y);
     // aim visuals go under objects
     if (g.tool.mode === 'single') drawAimTile(c, g.aimTile, WORLD_TILES, time, g.player.collecting ? '#ffd166' : 'rgba(255,255,255,0.7)');
@@ -169,6 +176,7 @@ export class Renderer {
     this.fx.drawFlyers(c);
     this.fx.drawParticles(c, view);
     this.fx.drawDrones(c, time);
+    this.life.drawSky(c, view, time);
     this.fx.drawTexts(c);
 
     if (build) this.drawBuild(build, time);

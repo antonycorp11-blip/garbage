@@ -3,7 +3,7 @@ import { fmtInt, fmtMoney, fmtPct, fmtShort, fmtTime } from '../core/format';
 import { DISCOVERIES } from '../data/discoveries';
 import { BUILD_ORDER, MACHINES, MAX_MACHINE_LEVEL, MachineType, machineUpgradeCost } from '../data/machines';
 import { MATERIALS, MAT_COUNT } from '../data/materials';
-import { ENDING } from '../data/messages';
+import { ENDING, SENDER } from '../data/messages';
 import { G_ASPHALT, G_CONCRETE, G_EARTH, G_GRAVEL, G_RUINFLOOR } from '../data/regions';
 import { TOOLS } from '../data/tools';
 import { UPGRADES, UPGRADE_MAP } from '../data/upgrades';
@@ -154,7 +154,7 @@ export class UI {
 
   handleEvent(e: GameEvent) {
     switch (e.type) {
-      case 'message': this.message(e.text, e.from); break;
+      case 'message': this.message(e.text, e.from); if (e.from === SENDER) this.app.renderer.life.say(e.text); break;
       case 'discovery': this.discoveryPopup(e.special); break;
       case 'openInventory': this.openModal('inventory'); break;
       case 'openMachine': this.select(this.game.machines.byId.get(e.id) ?? null); break;
