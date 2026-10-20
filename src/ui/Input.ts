@@ -39,7 +39,8 @@ export class Input {
       if (e.code === 'Space') this.keyCollect = false;
       if (e.code === 'KeyE') this.keyInteract = false;
     });
-    window.addEventListener('blur', () => { this.keys.clear(); this.keyCollect = false; this.mouseCollect = false; this.keyInteract = false; this.touchCollect = false; });
+    window.addEventListener('blur', () => { this.keys.clear(); this.keyCollect = false; this.mouseCollect = false; this.keyInteract = false; this.touchCollect = false; this.resetTouches(); });
+    document.addEventListener('visibilitychange', () => { if (document.hidden) this.resetTouches(); });
     canvas.addEventListener('contextmenu', (e) => e.preventDefault());
     canvas.addEventListener('wheel', (e) => { e.preventDefault(); this.sink.zoom(e.deltaY < 0 ? 1.12 : 1 / 1.12); }, { passive: false });
     canvas.addEventListener('pointerdown', (e) => this.down(e));
@@ -65,7 +66,9 @@ export class Input {
       this.mouseCollect = this.sink.worldDown(e.clientX, e.clientY, false);
       return;
     }
-    // touch
+    // touch: the first finger on the screen means every older touch is gone, even if the
+    // browser never told us (system gestures, notifications, app switches)
+    if (e.isPrimary) this.resetTouches();
     const worldPointers = [...this.pointers.values()].filter((p) => p.role !== 'joy');
     if (worldPointers.length === 1 && !this.sink.buildMode()) {
       // second finger outside the joystick => pinch
@@ -145,6 +148,16 @@ export class Input {
     } else if (p.role === 'pinch') {
       for (const q of this.pointers.values()) if (q.role === 'pinch') q.role = 'world';
       this.pinchDist = 0;
+    }
+  }
+
+  /** Forget every tracked touch and release the joystick. */
+  resetTouches() {
+    this.pointers.clear();
+    this.pinchDist = 0;
+    if (this.joy.id >= 0) {
+      this.joy = { id: -1, ox: 0, oy: 0, x: 0, y: 0 };
+      this.joyEl.classList.remove('on');
     }
   }
 

@@ -99,6 +99,16 @@ export class UI {
     this.el.zoom = zoom;
     this.el.buildbar = h(`<div class="buildbar pe" style="display:none"></div>`); r.appendChild(this.el.buildbar);
     this.el.mpanel = h(`<div class="mpanel" style="display:none"></div>`); r.appendChild(this.el.mpanel);
+    this.el.mpanel.addEventListener('click', (e) => {
+      const b = (e.target as HTMLElement).closest('[data-a]') as HTMLElement | null;
+      if (b) this.onPanelAction(b.dataset.a!);
+    });
+    // remember when a finger/mouse is down so live refreshes never swap a button under it
+    const down = () => { this.pressing = true; this.lastPress = performance.now(); };
+    const up = () => { this.pressing = false; this.lastPress = performance.now(); };
+    document.addEventListener('pointerdown', down, true);
+    document.addEventListener('pointerup', up, true);
+    document.addEventListener('pointercancel', up, true);
     this.el.layer = h(`<div style="position:absolute;inset:0;pointer-events:none;display:grid;place-items:center"></div>`); r.appendChild(this.el.layer);
   }
 
@@ -157,7 +167,7 @@ export class UI {
       ib.textContent = ctx.kind === 'special' ? 'ABRIR' : ctx.kind === 'machine' ? (ctx.label.startsWith('Esvaziar') ? 'ESVAZIAR' : 'VER') : ctx.kind === 'depot' ? 'VENDER' : 'INTERAGIR';
     }
     this.refreshT -= dt;
-    if (this.modalTab && this.refreshT <= 0) {
+    if (this.modalTab && this.refreshT <= 0 && !this.recentlyPressed()) {
       this.refreshT = 0.5;
       this.renderModal(false);
       const mm = this.modalEl?.querySelector('.mt-money');
@@ -320,25 +330,50 @@ export class UI {
     if (m.collected > 0) kv.push(`<span>Total coletado</span><span>${fmtInt(m.collected)}</span>`);
     if (delivery) kv.push(`<span>Entrega</span><span>${delivery}</span>`);
     if (isBelt(m.type)) kv.push(`<span>Pacotes</span><span>${m.belt.length}</span>`);
-    p.innerHTML = `<div class="grab"></div><div class="h"><b>${def.name}</b>${def.buildable && m.type !== 'conveyor' ? `<span class="lvl">Nv ${m.level}/${MAX_MACHINE_LEVEL}</span>` : ''}<button class="close" data-a="x" style="width:32px;height:32px">✕</button></div>
-      <div class="kv">${kv.join('')}</div>
-      <div class="st ${cls}">${status}</div>
-      <div class="acts">
-        ${needsLink ? (plan ? `<button class="btn ${g.missingFor(plan.cost) ? 'disabled' : ''} wide" data-a="link">🔗 Conectar ao depósito · ${plan.tiles.length} esteiras · ${fmtMoney(plan.cost.money)}</button>` : `<div class="st bad wide">${g.isUnlocked('conveyor') ? 'Sem caminho limpo até o depósito: limpe o lixo entre eles' : 'Para entregar de longe, desbloqueie Logística (esteiras)'}</div>`) : ''}
+    const head = `<b>${def.name}</b>${def.buildable && m.type !== 'conveyor' ? `<span class="lvl">Nv ${m.level}/${MAX_MACHINE_LEVEL}</span>` : ''}<button class="close" data-a="x" style="width:32px;height:32px">✕</button>`;
+    const acts = `${needsLink ? (plan ? `<button class="btn ${g.missingFor(plan.cost) ? 'disabled' : ''} wide" data-a="link">🔗 Conectar ao depósito · ${plan.tiles.length} esteiras · ${fmtMoney(plan.cost.money)}</button>` : `<div class="st bad wide">${g.isUnlocked('conveyor') ? 'Sem caminho limpo até o depósito: limpe o lixo entre eles' : 'Para entregar de longe, desbloqueie Logística (esteiras)'}</div>`) : ''}
         ${canUp ? `<button class="btn ${g.money < upCost ? 'disabled' : 'green'}" data-a="up">Melhorar ${fmtMoney(upCost)}</button>` : ''}
         ${m.bufferTotal > 0 ? `<button class="btn ${near ? '' : 'disabled'}" data-a="empty" title="Chegue perto">Esvaziar na mochila</button>` : ''}
         ${isBelt(m.type) ? `<button class="btn ghost" data-a="rot">↻ Girar</button>` : ''}
         ${def.buildable && !isBelt(m.type) ? `<button class="btn ghost" data-a="move">↔ Mover</button>` : ''}
-        ${def.buildable ? `<button class="btn red" data-a="del">Demolir</button>` : ''}
-      </div>`;
-    p.querySelector('[data-a=x]')?.addEventListener('click', () => this.select(null));
-    p.querySelector('[data-a=up]')?.addEventListener('click', () => { const e = g.upgradeMachine(m); if (e) { this.app.audio.play('error'); this.toastErr(e); } this.mpanelT = 0; });
-    p.querySelector('[data-a=empty]')?.addEventListener('click', () => { if (near) g.emptyMachineIntoBackpack(m); else this.toastErr('Chegue mais perto da máquina'); this.mpanelT = 0; });
-    p.querySelector('[data-a=rot]')?.addEventListener('click', () => { m.dir = (m.dir + 1) % 4; g.machines.linksDirty = true; this.app.audio.play('click'); this.mpanelT = 0; });
-    p.querySelector('[data-a=del]')?.addEventListener('click', () => { g.demolish(m); this.select(null); });
-    p.querySelector('[data-a=move]')?.addEventListener('click', () => this.app.startMove(m));
-    p.querySelector('[data-a=link]')?.addEventListener('click', () => { const e = g.connectToDepot(m); if (e) { this.app.audio.play('error'); this.toastErr(e); } else this.message('Esteiras construídas! Os materiais agora vão sozinhos até o depósito.', 'Sistema'); this.mpanelT = 0; });
+        ${def.buildable ? `<button class="btn red" data-a="del">Demolir</button>` : ''}`;
+    if (p.dataset.mid !== String(m.id) || !p.querySelector('.acts')) {
+      p.dataset.mid = String(m.id);
+      p.innerHTML = `<div class="grab"></div><div class="h"></div><div class="kv"></div><div class="st"></div><div class="acts"></div>`;
+    }
+    // only touch the parts that changed, so a finger on a button never loses its tap
+    const put = (sel: string, html: string, cl?: string) => {
+      const el = p.querySelector(sel) as HTMLElement;
+      if (el.dataset.h !== html) { el.innerHTML = html; el.dataset.h = html; }
+      if (cl !== undefined && el.className !== cl) el.className = cl;
+    };
+    put('.h', head);
+    put('.kv', kv.join(''));
+    put('.st', status, `st ${cls}`);
+    if (!this.recentlyPressed()) put('.acts', acts);
   }
+
+  /** Handles taps on the machine panel buttons (bound once). */
+  private onPanelAction(a: string) {
+    const m = this.selected;
+    const g = this.game;
+    if (!m) return;
+    const near = Math.hypot(g.player.tx - centerX(m), g.player.ty - centerY(m)) < MACHINES[m.type].size / 2 + 2;
+    switch (a) {
+      case 'x': this.select(null); break;
+      case 'up': { const e = g.upgradeMachine(m); if (e) { this.app.audio.play('error'); this.toastErr(e); } break; }
+      case 'empty': if (near) g.emptyMachineIntoBackpack(m); else this.toastErr('Chegue mais perto da máquina'); break;
+      case 'rot': m.dir = (m.dir + 1) % 4; g.machines.linksDirty = true; this.app.audio.play('click'); break;
+      case 'del': g.demolish(m); this.select(null); break;
+      case 'move': this.app.startMove(m); break;
+      case 'link': { const e = g.connectToDepot(m); if (e) { this.app.audio.play('error'); this.toastErr(e); } else this.message('Esteiras construídas! Os materiais agora vão sozinhos até o depósito.', 'Sistema'); break; }
+    }
+    this.mpanelT = 0;
+  }
+
+  private pressing = false;
+  private lastPress = 0;
+  recentlyPressed() { return this.pressing || performance.now() - this.lastPress < 450; }
 
   toastErr(text: string) {
     const g = this.game;
@@ -367,7 +402,9 @@ export class UI {
     this.modalEl.querySelector('.mt-title')!.textContent = t.name;
     this.modalEl.querySelector('.mt-money')!.textContent = fmtMoney(this.game.money);
     this.modalEl.querySelector('.modal')!.classList.toggle('tree-mode', tab === 'upgrades');
-    (this.modalEl.querySelector('.modal-b') as HTMLElement).scrollTop = 0;
+    const mb = this.modalEl.querySelector('.modal-b') as HTMLElement;
+    mb.scrollTop = 0;
+    mb.dataset.h = '';
     this.renderModal(true);
   }
 
@@ -407,6 +444,14 @@ export class UI {
       body.appendChild(this.tree.el);
       requestAnimationFrame(() => this.tree!.update());
     } else this.tree.update();
+  }
+
+  /** Replaces a container's HTML only when it changed. Returns false when nothing changed. */
+  private put(body: HTMLElement, html: string): boolean {
+    if (body.dataset.h === html) return false;
+    body.innerHTML = html;
+    body.dataset.h = html;
+    return true;
   }
 
   private flash(el: Element) {
@@ -462,7 +507,7 @@ export class UI {
       }
       html += `</div>`;
     }
-    body.innerHTML = html;
+    if (!this.put(body, html)) return;
     body.querySelectorAll('[data-b]').forEach((b) => b.addEventListener('click', () => {
       const t = (b as HTMLElement).dataset.b as MachineType;
       if (g.missingFor(g.machineCost(t))) { this.app.audio.play('error'); this.flash(b); return; }
@@ -503,7 +548,7 @@ export class UI {
       </div>`;
     });
     html += `</div>`;
-    body.innerHTML = html;
+    if (!this.put(body, html)) return;
     body.querySelectorAll('[data-t]').forEach((b) => b.addEventListener('click', () => {
       const e = g.buyTool(Number((b as HTMLElement).dataset.t));
       if (e) this.flash(b);
@@ -527,9 +572,9 @@ export class UI {
         <button class="toggle" data-res="${k}" title="Quantidade guardada para construções">Guardar ${fmtShort(g.reserve[k])}</button>
         <button class="btn ${g.storage[k] > 0 ? '' : 'disabled'}" data-sell="${k}">Vender ${fmtMoney(val)}</button></div></div>`;
     }
-    body.innerHTML = `<p class="lead">A auto-venda vende o excedente, mas guarda sozinha o material que as máquinas desbloqueadas precisam. "Guardar" aumenta essa reserva.</p>
+    if (!this.put(body, `<p class="lead">A auto-venda vende o excedente, mas guarda sozinha o material que as máquinas desbloqueadas precisam. "Guardar" aumenta essa reserva.</p>
       <div class="inv-top"><button class="btn green" data-sellall>Vender tudo · ${fmtMoney(total)}</button><span class="muted">Mochila ${fmtInt(p.carried)}/${fmtInt(g.d.capacity)}${p.carried > 0 ? ' · descarregue no depósito' : ''}</span></div>
-      <div class="mats">${rows}</div>`;
+      <div class="mats">${rows}</div>`)) return;
     body.querySelectorAll('[data-sell]').forEach((b) => b.addEventListener('click', () => { const k = Number((b as HTMLElement).dataset.sell); g.sell(k, g.storage[k]); this.renderModal(false); }));
     body.querySelector('[data-sellall]')?.addEventListener('click', () => { g.sellAll(); this.renderModal(false); });
     body.querySelectorAll('[data-auto]').forEach((b) => b.addEventListener('click', () => { const k = Number((b as HTMLElement).dataset.auto); g.autoSell[k] = !g.autoSell[k]; g.autoSellNow(); this.app.audio.play('click'); this.renderModal(false); }));
@@ -651,7 +696,7 @@ export class UI {
       html += st.revealed ? `<span>${st.opened ? '✓' : '…'} ${esc(def.name)}</span>` : `<span class="unk">??? ${'·'.repeat(3)}</span>`;
     });
     html += `</div>`;
-    body.innerHTML = html;
+    if (!this.put(body, html)) return;
   }
 
   private renderSettings(body: HTMLElement) {
