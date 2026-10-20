@@ -137,7 +137,9 @@ function shop() {
   if (nt < TOOLS.length && g.money >= g.toolCost(nt)) { g.buyTool(nt); log(`ferramenta: ${TOOLS[nt].name}`); return; }
   // processing: keep the depot yard flowing
   if (g.yardTotal > g.yardCap() * 0.6 && g.isUnlocked('crusher') && !g.missingFor(g.machineCost('crusher'))) {
-    if (placeNearHub('crusher')) { first('mcrusher', 'primeiro triturador'); return; }
+    const d = g.depot;
+    const spot = g.findSpot('crusher', d.tx + 1.5, d.ty + 1.5);
+    if (spot && !g.build('crusher', spot.tx, spot.ty)) { first('mcrusher', 'primeiro triturador'); return; }
   }
   // machines (keep a ratio)
   for (const type of ['excavator', 'robots', 'arm', 'collector'] as MachineType[]) {

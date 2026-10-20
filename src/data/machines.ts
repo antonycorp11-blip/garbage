@@ -35,14 +35,14 @@ const D = { heavy: false, process: 0, yard: 0, needsService: false };
 
 export const MACHINES: Record<MachineType, MachineDef> = {
   collector: {
-    ...D, type: 'collector', name: 'Coletor Automático', short: 'Coletor', role: 'coleta', size: 1, money: 120, mats: [0, 15, 0, 0, 0, 0], costGrowth: 1.13,
-    rate: 2.5, radius: 3.5, buffer: 80, unlock: null, solid: false, buildable: true,
+    ...D, type: 'collector', name: 'Coletor Automático', short: 'Coletor', role: 'coleta', size: 1, money: 120, mats: [0, 15, 0, 0, 0, 0], costGrowth: 1.17,
+    rate: 1.8, radius: 3.5, buffer: 80, unlock: null, solid: false, buildable: true,
     func: 'Aspira o lixo leve ao redor. Não ergue entulho pesado.',
     desc: 'A primeira automação: barato, incansável e barulhento. Deixa para trás a base pesada das pilhas.',
   },
   arm: {
-    ...D, type: 'arm', name: 'Braço Mecânico', short: 'Braço', role: 'coleta', size: 1, money: 900, mats: [0, 45, 0, 0, 8, 0], costGrowth: 1.14,
-    rate: 5, radius: 3, buffer: 160, heavy: true, unlock: 'a_arm', solid: false, buildable: true,
+    ...D, type: 'arm', name: 'Braço Mecânico', short: 'Braço', role: 'coleta', size: 1, money: 900, mats: [0, 45, 0, 0, 8, 0], costGrowth: 1.18,
+    rate: 3.5, radius: 3, buffer: 160, heavy: true, unlock: 'a_arm', solid: false, buildable: true,
     func: 'Remove entulho pesado: a base das pilhas que coletores e robôs não conseguem.',
     desc: 'Geladeiras, motores e carcaças? Ele ergue. Coloque no meio das pilhas grandes que sobraram.',
   },
@@ -65,14 +65,14 @@ export const MACHINES: Record<MachineType, MachineDef> = {
     desc: 'Quando o pátio lota, as máquinas param de entregar. O triturador mastiga a fila. Precisa ficar dentro do círculo do depósito.',
   },
   robots: {
-    ...D, type: 'robots', name: 'Estação de Robôs Catadores', short: 'Robôs', role: 'coleta', size: 1, money: 6000, mats: [0, 120, 0, 0, 80, 0], costGrowth: 1.28,
-    rate: 8, radius: 14, buffer: 800, unlock: 'a_robots', solid: false, buildable: true,
+    ...D, type: 'robots', name: 'Estação de Robôs Catadores', short: 'Robôs', role: 'coleta', size: 1, money: 6000, mats: [0, 120, 0, 0, 80, 0], costGrowth: 1.32,
+    rate: 6, radius: 14, buffer: 800, unlock: 'a_robots', solid: false, buildable: true,
     func: 'Drones caçam lixo leve espalhado numa área grande e trazem para a estação.',
     desc: 'Perfeitos para os restos que as máquinas fixas não alcançam. Preferem pilhas pequenas e espalhadas.',
   },
   excavator: {
-    ...D, type: 'excavator', name: 'Escavadeira Automatizada', short: 'Escavadeira', role: 'coleta', size: 2, money: 120000, mats: [0, 2500, 0, 0, 400, 0], costGrowth: 1.35,
-    rate: 60, radius: 24, buffer: 5000, heavy: true, unlock: 'a_excav', solid: true, buildable: true,
+    ...D, type: 'excavator', name: 'Escavadeira Automatizada', short: 'Escavadeira', role: 'coleta', size: 2, money: 120000, mats: [0, 2500, 0, 0, 400, 0], costGrowth: 1.4,
+    rate: 45, radius: 24, buffer: 5000, heavy: true, unlock: 'a_excav', solid: true, buildable: true,
     func: 'Demole as montanhas mais densas, inclusive o entulho pesado, em alta velocidade.',
     desc: 'Vai direto nas maiores pilhas da área. Gera tanto material que vai precisar de esteiras e trituradores.',
   },
