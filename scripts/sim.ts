@@ -136,6 +136,7 @@ function shop() {
   const nt = g.toolTier + 1;
   if (nt < TOOLS.length && g.money >= g.toolCost(nt)) { g.buyTool(nt); log(`ferramenta: ${TOOLS[nt].name}`); return; }
   // processing: keep the depot yard flowing
+  if (g.yardTotal > g.yardCap() * 0.6 && g.isUnlocked('crusher') && g.missingFor(g.machineCost('crusher'))) return; // save up
   if (g.yardTotal > g.yardCap() * 0.6 && g.isUnlocked('crusher') && !g.missingFor(g.machineCost('crusher'))) {
     const d = g.depot;
     const spot = g.findSpot('crusher', d.tx + 1.5, d.ty + 1.5);
