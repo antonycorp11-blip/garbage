@@ -129,12 +129,6 @@ function upgradeMachines() {
 }
 
 function shop() {
-  extendSpines();
-  relocateIdle();
-  if (Math.random() < 0.3) upgradeMachines();
-  // tools
-  const nt = g.toolTier + 1;
-  if (nt < TOOLS.length && g.money >= g.toolCost(nt)) { g.buyTool(nt); log(`ferramenta: ${TOOLS[nt].name}`); return; }
   // processing: keep the depot yard flowing
   if (g.yardTotal > g.yardCap() * 0.6 && g.isUnlocked('crusher') && g.missingFor(g.machineCost('crusher'))) return; // save up
   if (g.yardTotal > g.yardCap() * 0.6 && g.isUnlocked('crusher') && !g.missingFor(g.machineCost('crusher'))) {
@@ -142,6 +136,12 @@ function shop() {
     const spot = g.findSpot('crusher', d.tx + 1.5, d.ty + 1.5);
     if (spot && !g.build('crusher', spot.tx, spot.ty)) { first('mcrusher', 'primeiro triturador'); return; }
   }
+  extendSpines();
+  relocateIdle();
+  if (Math.random() < 0.3) upgradeMachines();
+  // tools
+  const nt = g.toolTier + 1;
+  if (nt < TOOLS.length && g.money >= g.toolCost(nt)) { g.buyTool(nt); log(`ferramenta: ${TOOLS[nt].name}`); return; }
   // machines (keep a ratio)
   for (const type of ['excavator', 'robots', 'arm', 'collector'] as MachineType[]) {
     if (!g.isUnlocked(type)) continue;
