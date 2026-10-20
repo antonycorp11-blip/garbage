@@ -61,7 +61,7 @@ export class Game {
   private yardAcc = 0;
   heavyWarnT = 0;
   autoSell = [true, true, true, true, true, true];
-  reserve = [0, 60, 0, 0, 20, 0];
+  reserve = [0, 0, 0, 0, 0, 0];
   toolTier = 0;
   upgrades: Record<string, number> = {};
   flags: Record<string, boolean> = {};
@@ -219,10 +219,22 @@ export class Game {
     this.moneyPopup += v;
   }
 
+  /** Materials kept automatically so every unlocked machine can be built (auto-sell never sells these). */
+  autoReserve(): number[] {
+    const r = emptyMats();
+    for (const t of BUILD_ORDER) {
+      if (!this.isUnlocked(t) || t === 'recycler') continue;
+      const c = this.machineCost(t);
+      for (let k = 0; k < MAT_COUNT; k++) r[k] = Math.max(r[k], c.mats[k]);
+    }
+    return r;
+  }
+
   autoSellNow() {
+    const auto = this.autoReserve();
     for (let k = 0; k < MAT_COUNT; k++) {
       if (!this.autoSell[k]) continue;
-      const extra = this.storage[k] - this.reserve[k];
+      const extra = this.storage[k] - Math.max(this.reserve[k], auto[k]);
       if (extra > 0) this.sell(k, extra, true);
     }
   }

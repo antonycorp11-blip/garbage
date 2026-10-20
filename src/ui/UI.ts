@@ -517,16 +517,17 @@ export class UI {
     let total = 0;
     let rows = '';
     const reserves = [0, 20, 60, 200, 1000, 5000];
+    const auto = g.autoReserve();
     for (let k = 0; k < MAT_COUNT; k++) {
       const m = MATERIALS[k];
       const val = g.storage[k] * g.d.value[k];
       total += val;
-      rows += `<div class="mat"><div class="mat-h"><i class="matsw" style="background:${m.color}"></i><div class="mat-n"><b>${m.name}</b><small>${fmtMoney(g.d.value[k])} por unidade</small></div><div class="mat-q"><b>${fmtInt(g.storage[k])}</b><small>${p.backpack[k] ? `+${fmtInt(p.backpack[k])} na mochila` : 'no depósito'}</small></div></div>
+      rows += `<div class="mat"><div class="mat-h"><i class="matsw" style="background:${m.color}"></i><div class="mat-n"><b>${m.name}</b><small>${fmtMoney(g.d.value[k])} por unidade</small></div><div class="mat-q"><b>${fmtInt(g.storage[k])}</b><small>${p.backpack[k] ? `+${fmtInt(p.backpack[k])} na mochila` : auto[k] > g.reserve[k] ? `guarda ${fmtShort(auto[k])} p/ máquinas` : 'no depósito'}</small></div></div>
         <div class="mat-a"><button class="toggle ${g.autoSell[k] ? 'on' : ''}" data-auto="${k}">${g.autoSell[k] ? '✓ Auto-venda' : '✗ Auto-venda'}</button>
         <button class="toggle" data-res="${k}" title="Quantidade guardada para construções">Guardar ${fmtShort(g.reserve[k])}</button>
         <button class="btn ${g.storage[k] > 0 ? '' : 'disabled'}" data-sell="${k}">Vender ${fmtMoney(val)}</button></div></div>`;
     }
-    body.innerHTML = `<p class="lead">A auto-venda transforma o excedente em dinheiro e guarda a reserva para construir máquinas.</p>
+    body.innerHTML = `<p class="lead">A auto-venda vende o excedente, mas guarda sozinha o material que as máquinas desbloqueadas precisam. "Guardar" aumenta essa reserva.</p>
       <div class="inv-top"><button class="btn green" data-sellall>Vender tudo · ${fmtMoney(total)}</button><span class="muted">Mochila ${fmtInt(p.carried)}/${fmtInt(g.d.capacity)}${p.carried > 0 ? ' · descarregue no depósito' : ''}</span></div>
       <div class="mats">${rows}</div>`;
     body.querySelectorAll('[data-sell]').forEach((b) => b.addEventListener('click', () => { const k = Number((b as HTMLElement).dataset.sell); g.sell(k, g.storage[k]); this.renderModal(false); }));
