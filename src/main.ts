@@ -1,10 +1,10 @@
-import { TILE } from './core/constants';
+import { DX, DY, TILE } from './core/constants';
 import { clamp } from './core/rng';
 import { AudioEngine } from './audio/Audio';
 import { MACHINES, MachineType } from './data/machines';
 import { Game, InputState } from './game/Game';
 import { SaveManager } from './game/Save';
-import { isBelt, isHub } from './game/Machines';
+import { isBelt } from './game/Machines';
 import { ChunkRenderer } from './render/ChunkRenderer';
 import { Effects } from './render/Effects';
 import { BuildPreview, Renderer } from './render/Renderer';
@@ -17,7 +17,7 @@ import './ui/style.css';
 interface Settings { music: number; sfx: number; quality: number; ranges: boolean }
 const SETTINGS_KEY = 'garbage-kingdom-settings';
 
-interface BuildState extends BuildPreview { painting: boolean; lastTx: number; lastTy: number; placedId: number }
+interface BuildState extends BuildPreview { painting: boolean; lastTx: number; lastTy: number; placedId: number; drag: { sx: number; sy: number; tx: number; ty: number } | null }
 
 export class App implements PointerSink {
   game: Game;
@@ -85,7 +85,7 @@ export class App implements PointerSink {
   defaultZoom() {
     const short = Math.min(window.innerWidth, window.innerHeight);
     const touch = document.body.classList.contains('touch');
-    return clamp(short / (touch ? 560 : 760), 0.55, 1.1);
+    return touch ? clamp(short / 400, 0.85, 1.3) : clamp(short / 760, 0.6, 1.1);
   }
 
   applySettings() {
@@ -115,8 +115,13 @@ export class App implements PointerSink {
   startBuild(type: MachineType) {
     const p = this.game.player;
     const s = MACHINES[type].size;
-    const tx = Math.floor(p.tx + p.fx * 2 - s / 2 + 0.5), ty = Math.floor(p.ty + p.fy * 2 - s / 2 + 0.5);
-    this.build = { type, tx, ty, dir: this.build?.dir ?? 0, problem: null, painting: false, lastTx: -1, lastTy: -1, placedId: -1 };
+    let tx = Math.floor(p.tx + p.fx * 2 - s / 2 + 0.5), ty = Math.floor(p.ty + p.fy * 2 - s / 2 + 0.5);
+    if (this.input.touch) {
+      // suggest the best nearby valid spot so the player only has to confirm
+      const spot = this.game.findSpot(type, p.tx, p.ty);
+      if (spot) { tx = spot.tx; ty = spot.ty; }
+    }
+    this.build = { type, tx, ty, dir: this.build?.dir ?? 0, problem: null, painting: false, lastTx: -1, lastTy: -1, placedId: -1, drag: null };
     this.ui.select(null);
     this.updateGhostProblem();
     this.ui.showBuildBar();
@@ -160,6 +165,16 @@ export class App implements PointerSink {
     const m = this.game.machines.at(b.tx, b.ty);
     b.placedId = m ? m.id : -1;
     b.lastTx = b.tx; b.lastTy = b.ty;
+    if (this.input.touch && this.build) {
+      // ready for the next one: belts advance along their direction, machines jump to the next free spot
+      if (isBelt(b.type)) { b.tx += DX[b.dir]; b.ty += DY[b.dir]; }
+      else {
+        const s = MACHINES[b.type].size;
+        const spot = this.game.findSpot(b.type, b.tx + s / 2, b.ty + s / 2);
+        if (spot) { b.tx = spot.tx; b.ty = spot.ty; }
+      }
+      this.updateGhostProblem();
+    }
     this.ui.showBuildBar();
     if (!isBelt(b.type) && this.game.missingFor(this.game.machineCost(b.type))) this.cancelBuild();
     return true;
@@ -171,31 +186,44 @@ export class App implements PointerSink {
   worldDown(sx: number, sy: number, touch: boolean): boolean {
     this.audio.init();
     if (this.ui.popupOpen || this.ui.modalTab) return false;
-    if (this.build) {
+    const b = this.build;
+    if (b) {
+      if (touch) {
+        // touch: the screen works like a trackpad, so the finger never hides the ghost
+        b.drag = { sx, sy, tx: b.tx, ty: b.ty };
+        return false;
+      }
       this.ghostAt(sx, sy);
-      if (isBelt(this.build.type)) {
-        this.build.painting = true;
-        this.build.lastTx = -1;
-        if (!this.build.problem) this.place();
-      } else if (!touch) this.place();
+      if (isBelt(b.type)) {
+        b.painting = true;
+        b.lastTx = -1;
+        if (!b.problem) this.place();
+      } else this.place();
       return false;
     }
     const t = this.renderer.tileAtScreen(sx, sy);
     const m = this.game.machines.at(t.tx, t.ty);
-    if (m && !isBelt(m.type)) {
-      if (isHub(m.type) && !touch) { this.ui.select(m); return false; }
-      this.ui.select(m);
-      return false;
-    }
-    if (m && isBelt(m.type) && !touch) { this.ui.select(m); return false; }
-    if (touch && m) { this.ui.select(m); return false; }
+    if (m) { this.ui.select(m); return false; }
     if (!touch) this.ui.select(null);
     return !touch;
   }
 
-  worldMove(sx: number, sy: number) {
+  worldMove(sx: number, sy: number, touch?: boolean) {
     const b = this.build;
     if (!b) return;
+    if (touch) {
+      if (!b.drag) return;
+      const k = 1 / (this.renderer.cam.zoom * TILE);
+      const nx = b.drag.tx + Math.round((sx - b.drag.sx) * k * 1.15), ny = b.drag.ty + Math.round((sy - b.drag.sy) * k * 1.15);
+      if (nx !== b.tx || ny !== b.ty) {
+        if (isBelt(b.type)) { const dx = nx - b.tx, dy = ny - b.ty; if (Math.abs(dx) + Math.abs(dy) === 1) b.dir = dx === 1 ? 0 : dy === 1 ? 1 : dx === -1 ? 2 : 3; }
+        b.tx = nx; b.ty = ny;
+        this.updateGhostProblem();
+        this.ui.refreshBuildBar();
+        this.audio.play('click', 0.25);
+      }
+      return;
+    }
     const pt = b.tx, pty = b.ty;
     this.ghostAt(sx, sy);
     if (b.painting && isBelt(b.type) && (b.tx !== pt || b.ty !== pty)) {
@@ -235,11 +263,22 @@ export class App implements PointerSink {
     if (!b) return;
     if (b.painting) { b.painting = false; return; }
     if (touch) {
-      // on touch the ghost only moves; the player confirms with "Construir aqui"
-      this.ghostAt(sx, sy);
+      // a quick tap jumps the ghost straight to that tile
+      if (tap) { this.ghostAt(sx, sy); this.audio.play('click', 0.4); }
+      b.drag = null;
       this.ui.refreshBuildBar();
-      void tap;
     }
+  }
+
+  /** Nudge the ghost one tile (on-screen arrows). */
+  nudgeBuild(dx: number, dy: number) {
+    const b = this.build;
+    if (!b) return;
+    b.tx += dx; b.ty += dy;
+    if (isBelt(b.type)) b.dir = dx === 1 ? 0 : dy === 1 ? 1 : dx === -1 ? 2 : 3;
+    this.updateGhostProblem();
+    this.ui.refreshBuildBar();
+    this.audio.play('click', 0.4);
   }
 
   confirmBuild() {
@@ -305,7 +344,11 @@ export class App implements PointerSink {
       if (e.type === 'ending') this.renderer.endingT = 0;
       this.ui.handleEvent(e);
     }
-    if (this.build) { this.updateGhostProblem(); }
+    if (this.build) {
+      this.updateGhostProblem();
+      const s = MACHINES[this.build.type].size;
+      this.renderer.focus = this.input.touch ? { x: (this.build.tx + s / 2) * TILE, y: (this.build.ty + s / 2) * TILE } : null;
+    } else this.renderer.focus = null;
     this.fx.update(dt);
     this.renderer.chunks.rendersThisFrame = 0;
     this.renderer.draw(this.time, dt, this.build);

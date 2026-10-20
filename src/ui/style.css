@@ -505,3 +505,12 @@ body.touch .msg { font-size: 12px; line-height: 1.25; }
 }
 .sk { min-height: 0; height: 100%; }
 .modal.tree-mode .modal-b { display: flex; }
+
+/* build bar extras */
+.buildbar .bb-msg.good { color: #86efac; }
+.buildbar .bb-msg.warn { color: #fde047; }
+.bb-pad { gap: 6px; justify-content: center; }
+.bb-pad .pad { width: 52px; height: 44px; border-radius: 12px; border: 1px solid var(--line); background: rgba(255,255,255,.08); color: var(--text); font-size: 18px; font-weight: 900; }
+.bb-pad .pad:active { background: rgba(255,176,46,.3); }
+.bb-pad .pad.rot { background: rgba(255,176,46,.18); color: var(--accent); }
+.mpanel .acts .wide { flex-basis: 100%; }

@@ -1,5 +1,5 @@
 import { mulberry } from '../core/rng';
-import { ellipse, lin, makeCanvas, rad, rrect, shade } from './paint';
+import { ellipse, makeCanvas, rad, rrect, shade } from './paint';
 
 type C = CanvasRenderingContext2D;
 
@@ -32,153 +32,154 @@ export function blit(c: C, e: Cached, x: number, y: number) {
   c.drawImage(e.cv, x + e.ox, y + e.oy, e.w, e.h);
 }
 
-// ------------------------------------------------------------------ primitives
-export function rivet(c: C, x: number, y: number, r = 0.9, col = '#9aa3a8') {
-  c.fillStyle = 'rgba(0,0,0,0.45)';
-  c.beginPath(); c.arc(x + 0.25, y + 0.35, r, 0, 6.28); c.fill();
-  c.fillStyle = rad(c, x - r * 0.35, y - r * 0.35, 0, r * 1.2, [[0, shade(col, 0.6)], [1, shade(col, -0.35)]]);
-  c.beginPath(); c.arc(x, y, r, 0, 6.28); c.fill();
+// ------------------------------------------------------------------ primitives (cartoon style)
+/** Shared outline color/width: the same ink as the characters, so everything reads as one game. */
+export const INK = '#2a1a10';
+export const INK_W = 1.15;
+
+function ink(c: C, w = INK_W) { c.strokeStyle = INK; c.lineWidth = w; c.lineJoin = 'round'; c.stroke(); }
+
+export function rivet(c: C, x: number, y: number, r = 0.9, col = '#b9c2c7') {
+  c.fillStyle = INK; c.beginPath(); c.arc(x, y, r + 0.35, 0, 6.28); c.fill();
+  c.fillStyle = col; c.beginPath(); c.arc(x, y, r, 0, 6.28); c.fill();
+  c.fillStyle = 'rgba(255,255,255,0.7)'; c.beginPath(); c.arc(x - r * 0.3, y - r * 0.3, r * 0.35, 0, 6.28); c.fill();
 }
 
 export function rivetRow(c: C, x0: number, y0: number, x1: number, y1: number, n: number, r = 0.8, col?: string) {
-  for (let i = 0; i < n; i++) {
-    const t = n === 1 ? 0.5 : i / (n - 1);
-    rivet(c, x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, r, col);
+  const m = Math.max(2, Math.round(n * 0.6));
+  for (let i = 0; i < m; i++) {
+    const t = m === 1 ? 0.5 : i / (m - 1);
+    rivet(c, x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, r * 0.9, col);
   }
 }
 
 export function bolt(c: C, x: number, y: number, r = 1.4) {
-  c.fillStyle = 'rgba(0,0,0,0.4)';
-  c.beginPath();
-  for (let i = 0; i < 6; i++) { const a = (i / 6) * 6.28; c.lineTo(x + 0.3 + Math.cos(a) * r, y + 0.4 + Math.sin(a) * r); }
-  c.fill();
-  c.fillStyle = lin(c, x - r, y - r, x + r, y + r, [[0, '#d7dde0'], [1, '#5c666c']]);
   c.beginPath();
   for (let i = 0; i < 6; i++) { const a = (i / 6) * 6.28; c.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); }
-  c.fill();
+  c.closePath();
+  c.fillStyle = '#c3cbd0'; c.fill(); ink(c, 0.8);
+  c.fillStyle = '#7a858b'; c.beginPath(); c.arc(x, y, r * 0.35, 0, 6.28); c.fill();
 }
 
-/** Metal plate with bevel, optional rivets, weathering. */
+/** Cel-shaded plate: flat base, darker lower band, crisp highlight, ink outline. */
 export function plate(c: C, x: number, y: number, w: number, h: number, col: string, opts: { r?: number; rivets?: boolean; rust?: number; seed?: number; vertical?: boolean } = {}) {
   const r = opts.r ?? 1.5;
-  rrect(c, x, y, w, h, r);
-  c.fillStyle = opts.vertical
-    ? lin(c, x, y, x + w, y, [[0, shade(col, 0.22)], [0.45, col], [1, shade(col, -0.35)]])
-    : lin(c, x, y, x, y + h, [[0, shade(col, 0.25)], [0.5, col], [1, shade(col, -0.3)]]);
-  c.fill();
-  c.strokeStyle = shade(col, -0.62); c.lineWidth = 0.7; c.stroke();
-  // top-left bevel highlight
-  c.strokeStyle = 'rgba(255,255,255,0.22)'; c.lineWidth = 0.6;
-  c.beginPath(); c.moveTo(x + r, y + 0.6); c.lineTo(x + w - r, y + 0.6); c.moveTo(x + 0.6, y + r); c.lineTo(x + 0.6, y + h - r); c.stroke();
-  if (opts.rivets) {
-    const m = 1.6;
-    rivet(c, x + m, y + m, 0.7); rivet(c, x + w - m, y + m, 0.7); rivet(c, x + m, y + h - m, 0.7); rivet(c, x + w - m, y + h - m, 0.7);
-  }
+  rrect(c, x, y, w, h, r); c.fillStyle = col; c.fill();
+  c.save(); rrect(c, x, y, w, h, r); c.clip();
+  c.fillStyle = shade(col, -0.22);
+  if (opts.vertical) c.fillRect(x + w * 0.62, y, w, h); else c.fillRect(x, y + h * 0.62, w, h);
+  c.fillStyle = 'rgba(255,255,255,0.28)';
+  if (opts.vertical) c.fillRect(x + w * 0.12, y, Math.max(0.8, w * 0.12), h); else c.fillRect(x, y + h * 0.1, w, Math.max(0.7, h * 0.12));
+  c.restore();
+  rrect(c, x, y, w, h, r); ink(c, Math.min(INK_W, Math.max(0.6, Math.min(w, h) * 0.25)));
+  if (opts.rivets) { const m = 1.8; rivet(c, x + m, y + m, 0.6); rivet(c, x + w - m, y + m, 0.6); rivet(c, x + m, y + h - m, 0.6); rivet(c, x + w - m, y + h - m, 0.6); }
   if (opts.rust) weather(c, x, y, w, h, opts.rust, opts.seed ?? 1);
 }
 
-/** Rust blotches, streaks, scratches and grime inside a rect. */
+/** Stylized wear: a few clean-edged rust patches and drips (no noisy grain). */
 export function weather(c: C, x: number, y: number, w: number, h: number, amount: number, seed: number) {
   const r = mulberry(seed * 7919 + 13);
   c.save();
   c.beginPath(); c.rect(x, y, w, h); c.clip();
-  const n = Math.round(amount * (w * h) / 40);
+  const n = Math.max(1, Math.round(amount * (w * h) / 220));
   for (let i = 0; i < n; i++) {
-    const px = x + r() * w, py = y + r() * h, s = 0.6 + r() * 2.4;
-    const k = r();
-    c.fillStyle = k < 0.55 ? `rgba(${138 + r() * 30 | 0},${78 + r() * 25 | 0},${32 + r() * 15 | 0},${0.18 + r() * 0.25})` : `rgba(${45 + r() * 20 | 0},${35 + r() * 15 | 0},${25 + r() * 10 | 0},${0.12 + r() * 0.2})`;
-    ellipse(c, px, py, s, s * (0.5 + r() * 0.5), r() * 3); c.fill();
-    if (r() < 0.35) { // drip streak
-      c.strokeStyle = 'rgba(120,70,30,0.22)'; c.lineWidth = 0.5 + r() * 0.6;
-      c.beginPath(); c.moveTo(px, py); c.lineTo(px + (r() - 0.5), py + 2 + r() * 5); c.stroke();
-    }
+    const px = x + r() * w, py = y + r() * h, s = 1.2 + r() * 2.4;
+    c.fillStyle = r() < 0.6 ? 'rgba(168,92,40,0.45)' : 'rgba(60,40,25,0.22)';
+    c.beginPath();
+    for (let k = 0; k < 7; k++) { const a = (k / 7) * 6.28, rr2 = s * (0.7 + r() * 0.5); c.lineTo(px + Math.cos(a) * rr2, py + Math.sin(a) * rr2 * 0.7); }
+    c.closePath(); c.fill();
+    if (r() < 0.4) { c.fillStyle = 'rgba(168,92,40,0.35)'; c.fillRect(px - 0.4, py, 0.8, 2 + r() * 4); }
   }
-  c.strokeStyle = 'rgba(255,255,255,0.12)'; c.lineWidth = 0.3;
-  for (let i = 0; i < n * 0.6; i++) { const px = x + r() * w, py = y + r() * h; c.beginPath(); c.moveTo(px, py); c.lineTo(px + (r() - 0.5) * 5, py + (r() - 0.5) * 2); c.stroke(); }
-  c.fillStyle = lin(c, 0, y + h * 0.6, 0, y + h, [[0, 'rgba(40,25,10,0)'], [1, `rgba(40,25,10,${0.25 * amount})`]]);
-  c.fillRect(x, y, w, h);
   c.restore();
 }
 
-export function hazardStripes(c: C, x: number, y: number, w: number, h: number, a = '#f5c518', b = '#1f1f1f') {
+export function hazardStripes(c: C, x: number, y: number, w: number, h: number, a = '#ffc928', b = '#2a1a10') {
   c.save();
   c.beginPath(); c.rect(x, y, w, h); c.clip();
   c.fillStyle = a; c.fillRect(x, y, w, h);
   c.fillStyle = b;
-  for (let i = -h; i < w + h; i += 5) { c.beginPath(); c.moveTo(x + i, y + h); c.lineTo(x + i + 2.5, y + h); c.lineTo(x + i + 2.5 + h, y); c.lineTo(x + i + h, y); c.closePath(); c.fill(); }
-  c.fillStyle = 'rgba(255,255,255,0.18)'; c.fillRect(x, y, w, h * 0.3);
-  c.fillStyle = 'rgba(0,0,0,0.2)'; c.fillRect(x, y + h * 0.75, w, h * 0.25);
+  const step = Math.max(4, h * 1.6);
+  for (let i = -h; i < w + h; i += step) { c.beginPath(); c.moveTo(x + i, y + h); c.lineTo(x + i + step / 2, y + h); c.lineTo(x + i + step / 2 + h, y); c.lineTo(x + i + h, y); c.closePath(); c.fill(); }
   c.restore();
+  c.beginPath(); c.rect(x, y, w, h); ink(c, 0.6);
 }
 
-/** Thick pipe along a polyline, with metallic shading. */
+/** Thick pipe along a polyline: ink outline, flat body, one highlight. */
 export function pipe(c: C, pts: number[], width: number, col: string) {
   const path = () => { c.beginPath(); c.moveTo(pts[0], pts[1]); for (let i = 2; i < pts.length; i += 2) c.lineTo(pts[i], pts[i + 1]); };
   c.lineCap = 'round'; c.lineJoin = 'round';
-  path(); c.strokeStyle = 'rgba(0,0,0,0.35)'; c.lineWidth = width + 1.2; c.stroke();
-  path(); c.strokeStyle = shade(col, -0.35); c.lineWidth = width; c.stroke();
-  path(); c.strokeStyle = col; c.lineWidth = width * 0.6; c.stroke();
-  c.save(); c.translate(-width * 0.18, -width * 0.18);
-  path(); c.strokeStyle = shade(col, 0.5, 0.7); c.lineWidth = width * 0.22; c.stroke();
+  path(); c.strokeStyle = INK; c.lineWidth = width + INK_W * 1.6; c.stroke();
+  path(); c.strokeStyle = shade(col, -0.18); c.lineWidth = width; c.stroke();
+  c.save(); c.translate(-width * 0.16, -width * 0.16);
+  path(); c.strokeStyle = shade(col, 0.35); c.lineWidth = width * 0.32; c.stroke();
   c.restore();
 }
 
-export function cable(c: C, x0: number, y0: number, x1: number, y1: number, sag: number, col = '#1d1d1f', w = 0.9) {
+export function cable(c: C, x0: number, y0: number, x1: number, y1: number, sag: number, col = '#2b2b30', w = 0.9) {
+  c.beginPath(); c.moveTo(x0, y0); c.quadraticCurveTo((x0 + x1) / 2, Math.max(y0, y1) + sag, x1, y1);
+  c.strokeStyle = INK; c.lineWidth = w + 0.8; c.stroke();
   c.beginPath(); c.moveTo(x0, y0); c.quadraticCurveTo((x0 + x1) / 2, Math.max(y0, y1) + sag, x1, y1);
   c.strokeStyle = col; c.lineWidth = w; c.stroke();
 }
 
 export function vent(c: C, x: number, y: number, w: number, h: number, slats: number) {
-  rrect(c, x, y, w, h, 0.8); c.fillStyle = '#1b1d1f'; c.fill();
+  rrect(c, x, y, w, h, 0.8); c.fillStyle = '#23272b'; c.fill(); ink(c, 0.6);
   for (let i = 0; i < slats; i++) {
-    const yy = y + 0.8 + (i * (h - 1.6)) / slats;
-    c.fillStyle = 'rgba(160,170,175,0.55)'; c.fillRect(x + 0.6, yy, w - 1.2, 0.6);
+    const yy = y + 0.9 + (i * (h - 1.6)) / slats;
+    c.fillStyle = '#6d777d'; c.fillRect(x + 0.8, yy, w - 1.6, Math.max(0.5, (h - 1.6) / slats * 0.45));
   }
 }
 
-export function windowGlass(c: C, x: number, y: number, w: number, h: number, lit = false, frame = '#2b2f33') {
-  c.fillStyle = frame; rrect(c, x - 0.8, y - 0.8, w + 1.6, h + 1.6, 1); c.fill();
-  c.fillStyle = lit ? lin(c, x, y, x, y + h, [[0, '#fff7c2'], [1, '#f3b84a']]) : lin(c, x, y, x + w, y + h, [[0, '#a9d4ea'], [0.5, '#3f6a82'], [1, '#1d3442']]);
-  c.fillRect(x, y, w, h);
-  c.fillStyle = 'rgba(255,255,255,0.35)';
-  c.beginPath(); c.moveTo(x, y + h * 0.7); c.lineTo(x + w * 0.4, y); c.lineTo(x + w * 0.6, y); c.lineTo(x, y + h); c.closePath(); c.fill();
+export function windowGlass(c: C, x: number, y: number, w: number, h: number, lit = false, frame = '#3a4046') {
+  rrect(c, x - 0.8, y - 0.8, w + 1.6, h + 1.6, 1); c.fillStyle = frame; c.fill(); ink(c, 0.7);
+  c.fillStyle = lit ? '#ffe28a' : '#7cc4e8'; c.fillRect(x, y, w, h);
+  c.fillStyle = lit ? '#ffc94a' : '#4d93b8'; c.fillRect(x, y + h * 0.55, w, h * 0.45);
+  c.fillStyle = 'rgba(255,255,255,0.75)';
+  c.beginPath(); c.moveTo(x + w * 0.15, y + h * 0.75); c.lineTo(x + w * 0.45, y); c.lineTo(x + w * 0.6, y); c.lineTo(x + w * 0.3, y + h * 0.75); c.closePath(); c.fill();
 }
 
 export function gauge(c: C, x: number, y: number, r: number, needle: number) {
-  c.fillStyle = '#2a2a2a'; c.beginPath(); c.arc(x, y, r + 0.6, 0, 6.28); c.fill();
-  c.fillStyle = '#f2efe6'; c.beginPath(); c.arc(x, y, r, 0, 6.28); c.fill();
-  c.strokeStyle = '#d32f2f'; c.lineWidth = 0.6; c.beginPath(); c.arc(x, y, r * 0.75, -0.6, 0.3); c.stroke();
-  c.strokeStyle = '#111'; c.lineWidth = 0.5; c.beginPath(); c.moveTo(x, y); c.lineTo(x + Math.cos(needle) * r * 0.85, y + Math.sin(needle) * r * 0.85); c.stroke();
+  c.beginPath(); c.arc(x, y, r, 0, 6.28); c.fillStyle = '#fbf6e9'; c.fill(); ink(c, 0.7);
+  c.strokeStyle = '#e53935'; c.lineWidth = 0.7; c.beginPath(); c.arc(x, y, r * 0.7, -0.7, 0.2); c.stroke();
+  c.strokeStyle = INK; c.lineWidth = 0.6; c.beginPath(); c.moveTo(x, y); c.lineTo(x + Math.cos(needle) * r * 0.8, y + Math.sin(needle) * r * 0.8); c.stroke();
 }
 
-/** 3/4 view box: top face + front face, with bevel and outline. */
+/** 3/4 view box: cel-shaded top face + front face, ink outline. */
 export function box34(c: C, x: number, y: number, w: number, top: number, front: number, col: string, r = 1.5) {
-  // front
-  rrect(c, x, y + top - r, w, front + r, r);
-  c.fillStyle = lin(c, x, 0, x + w, 0, [[0, shade(col, -0.12)], [0.6, shade(col, -0.22)], [1, shade(col, -0.42)]]); c.fill();
-  c.strokeStyle = shade(col, -0.65); c.lineWidth = 0.7; c.stroke();
-  // top
-  rrect(c, x, y, w, top, r);
-  c.fillStyle = lin(c, x, y, x + w, y + top, [[0, shade(col, 0.32)], [1, shade(col, 0.02)]]); c.fill();
-  c.strokeStyle = shade(col, -0.55); c.stroke();
-  c.strokeStyle = 'rgba(255,255,255,0.3)'; c.lineWidth = 0.5;
-  c.beginPath(); c.moveTo(x + r, y + 0.5); c.lineTo(x + w - r, y + 0.5); c.stroke();
+  const fy = y + top;
+  // front face
+  rrect(c, x, fy - r, w, front + r, r); c.fillStyle = shade(col, -0.2); c.fill();
+  c.save(); rrect(c, x, fy - r, w, front + r, r); c.clip();
+  c.fillStyle = shade(col, -0.36); c.fillRect(x + w * 0.72, fy - r, w, front + r);
+  c.fillStyle = 'rgba(0,0,0,0.12)'; c.fillRect(x, fy + front - Math.min(2, front * 0.25), w, 3);
+  c.restore();
+  rrect(c, x, fy - r, w, front + r, r); ink(c);
+  // top face
+  rrect(c, x, y, w, top, r); c.fillStyle = shade(col, 0.12); c.fill();
+  c.save(); rrect(c, x, y, w, top, r); c.clip();
+  c.fillStyle = 'rgba(255,255,255,0.3)'; c.fillRect(x, y, w, Math.max(0.8, top * 0.22));
+  c.restore();
+  rrect(c, x, y, w, top, r); ink(c);
 }
 
-/** 3/4 vertical cylinder (tank, drum). */
+/** 3/4 vertical cylinder (tank, drum), cel-shaded. */
 export function cylinder34(c: C, cx: number, top: number, rx: number, h: number, col: string, bands = 0) {
   const ry = rx * 0.42;
-  c.beginPath(); c.moveTo(cx - rx, top); c.lineTo(cx - rx, top + h); c.ellipse(cx, top + h, rx, ry, 0, Math.PI, 0, true); c.lineTo(cx + rx, top); c.closePath();
-  c.fillStyle = lin(c, cx - rx, 0, cx + rx, 0, [[0, shade(col, -0.1)], [0.28, shade(col, 0.35)], [0.55, col], [1, shade(col, -0.5)]]); c.fill();
-  c.strokeStyle = shade(col, -0.65); c.lineWidth = 0.7; c.stroke();
+  const body = () => { c.beginPath(); c.moveTo(cx - rx, top); c.lineTo(cx - rx, top + h); c.ellipse(cx, top + h, rx, ry, 0, Math.PI, 0, true); c.lineTo(cx + rx, top); c.closePath(); };
+  body(); c.fillStyle = col; c.fill();
+  c.save(); body(); c.clip();
+  c.fillStyle = shade(col, -0.25); c.fillRect(cx + rx * 0.35, top - ry, rx, h + ry * 2);
+  c.fillStyle = shade(col, -0.42); c.fillRect(cx + rx * 0.75, top - ry, rx, h + ry * 2);
+  c.fillStyle = 'rgba(255,255,255,0.32)'; c.fillRect(cx - rx * 0.62, top, rx * 0.22, h + ry);
   for (let i = 1; i <= bands; i++) {
     const yy = top + (h * i) / (bands + 1);
-    c.beginPath(); c.ellipse(cx, yy, rx, ry, 0, 0, Math.PI); c.strokeStyle = shade(col, -0.45); c.lineWidth = 0.9; c.stroke();
-    c.beginPath(); c.ellipse(cx, yy - 0.6, rx, ry, 0, 0.3, Math.PI - 0.3); c.strokeStyle = shade(col, 0.4, 0.5); c.lineWidth = 0.4; c.stroke();
+    c.beginPath(); c.ellipse(cx, yy, rx, ry, 0, 0, Math.PI); c.strokeStyle = shade(col, -0.5); c.lineWidth = 1.1; c.stroke();
   }
-  ellipse(c, cx, top, rx, ry);
-  c.fillStyle = lin(c, cx - rx, top - ry, cx + rx, top + ry, [[0, shade(col, 0.45)], [1, shade(col, -0.05)]]); c.fill();
-  c.strokeStyle = shade(col, -0.55); c.stroke();
+  c.restore();
+  body(); ink(c);
+  ellipse(c, cx, top, rx, ry); c.fillStyle = shade(col, 0.2); c.fill();
+  c.save(); ellipse(c, cx, top, rx, ry); c.clip(); c.fillStyle = 'rgba(255,255,255,0.25)'; c.fillRect(cx - rx, top - ry, rx * 2, ry * 0.7); c.restore();
+  ellipse(c, cx, top, rx, ry); ink(c);
 }
 
 /** Soft rectangular contact shadow. */
@@ -198,13 +199,13 @@ export function corrugated(c: C, x: number, y: number, w: number, h: number, col
   c.fillStyle = col; c.fillRect(x, y, w, h);
   if (vertical) {
     for (let i = x; i < x + w; i += step) {
-      c.fillStyle = 'rgba(255,255,255,0.2)'; c.fillRect(i, y, step * 0.35, h);
-      c.fillStyle = 'rgba(0,0,0,0.18)'; c.fillRect(i + step * 0.55, y, step * 0.3, h);
+      c.fillStyle = 'rgba(255,255,255,0.22)'; c.fillRect(i, y, step * 0.3, h);
+      c.fillStyle = 'rgba(0,0,0,0.2)'; c.fillRect(i + step * 0.62, y, step * 0.22, h);
     }
   } else {
     for (let i = y; i < y + h; i += step) {
-      c.fillStyle = 'rgba(255,255,255,0.2)'; c.fillRect(x, i, w, step * 0.35);
-      c.fillStyle = 'rgba(0,0,0,0.18)'; c.fillRect(x, i + step * 0.55, w, step * 0.3);
+      c.fillStyle = 'rgba(255,255,255,0.22)'; c.fillRect(x, i, w, step * 0.3);
+      c.fillStyle = 'rgba(0,0,0,0.2)'; c.fillRect(x, i + step * 0.62, w, step * 0.22);
     }
   }
   c.restore();

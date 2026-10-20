@@ -10,7 +10,7 @@ import { World } from '../world/World';
 import { DEPOT } from '../world/worldgen';
 import { Derived, computeDerived } from './derived';
 import { FX, NULL_FX } from './fx';
-import { Machine, MachineSystem, centerX, centerY, isHub } from './Machines';
+import { Machine, MachineSystem, centerX, centerY, hubRadius, isHub } from './Machines';
 import { Player } from './Player';
 
 export interface InputState {
@@ -306,6 +306,130 @@ export class Game {
     this.fx.burst(centerX(m) * TILE, centerY(m) * TILE, 'dust', 16);
     this.fx.sound('demolish');
     if (m.type === 'recycler') this.recompute();
+  }
+
+  private freeForBelt(tx: number, ty: number): boolean {
+    if (!inWorld(tx, ty)) return false;
+    const i = tileIndex(tx, ty);
+    if (this.world.garbage[i] > 0 || this.world.occupant[i] >= 0 || this.world.specialAt[i] >= 0) return false;
+    if (tx === CENTER - 4 && (ty === CENTER + 1 || ty === CENTER + 2)) return false;
+    return true;
+  }
+
+  /**
+   * Shortest conveyor route (BFS over clean, free tiles) from a machine to a depot,
+   * or to an existing conveyor that already reaches a depot.
+   */
+  planConnection(m: Machine): { tiles: [number, number, number][]; cost: { money: number; mats: number[] } } | null {
+    const size = MACHINES[m.type].size;
+    const W = WORLD_TILES;
+    const prev = new Map<number, number>();
+    const queue: number[] = [];
+    const goalDir = new Map<number, number>();
+    const DXs = [1, 0, -1, 0], DYs = [0, 1, 0, -1];
+    // goals: free tiles orthogonally adjacent to a hub or to a linked belt (not pointing back)
+    const isGoal = (tx: number, ty: number): number => {
+      for (let d = 0; d < 4; d++) {
+        const o = this.machines.at(tx + DXs[d], ty + DYs[d]);
+        if (!o || o.id === m.id) continue;
+        if (isHub(o.type)) return d;
+        if ((o.type === 'conveyor' || o.type === 'separator') && o.linked && (o.dir + 2) % 4 !== d) return d;
+      }
+      return -1;
+    };
+    for (let i = 0; i < size; i++) {
+      for (const [tx, ty] of [[m.tx + i, m.ty - 1], [m.tx + i, m.ty + size], [m.tx - 1, m.ty + i], [m.tx + size, m.ty + i]]) {
+        if (!this.freeForBelt(tx, ty)) continue;
+        const k = ty * W + tx;
+        if (prev.has(k)) continue;
+        prev.set(k, -1);
+        queue.push(k);
+      }
+    }
+    let found = -1;
+    for (let qi = 0; qi < queue.length && qi < 20000; qi++) {
+      const k = queue[qi];
+      const tx = k % W, ty = (k / W) | 0;
+      const gd = isGoal(tx, ty);
+      if (gd >= 0) { found = k; goalDir.set(k, gd); break; }
+      for (let d = 0; d < 4; d++) {
+        const nx = tx + DXs[d], ny = ty + DYs[d];
+        const nk = ny * W + nx;
+        if (prev.has(nk) || !this.freeForBelt(nx, ny)) continue;
+        if (Math.abs(nx - m.tx) > 70 || Math.abs(ny - m.ty) > 70) continue;
+        prev.set(nk, k);
+        queue.push(nk);
+      }
+    }
+    if (found < 0) return null;
+    const path: number[] = [];
+    for (let k = found; k !== -1; k = prev.get(k)!) path.push(k);
+    path.reverse();
+    const tiles: [number, number, number][] = path.map((k, i) => {
+      const tx = k % W, ty = (k / W) | 0;
+      let dir: number;
+      if (i < path.length - 1) {
+        const nk = path[i + 1];
+        const dx = (nk % W) - tx, dy = ((nk / W) | 0) - ty;
+        dir = dx === 1 ? 0 : dy === 1 ? 1 : dx === -1 ? 2 : 3;
+      } else dir = goalDir.get(k)!;
+      return [tx, ty, dir];
+    });
+    const unit = this.machineCost('conveyor');
+    return { tiles, cost: { money: unit.money * tiles.length, mats: unit.mats.map((v) => v * tiles.length) } };
+  }
+
+  connectToDepot(m: Machine): string | null {
+    if (!this.isUnlocked('conveyor')) return 'Desbloqueie Logística na árvore';
+    const plan = this.planConnection(m);
+    if (!plan) return 'Sem caminho limpo até o depósito: limpe o terreno no meio';
+    const miss = this.missingFor(plan.cost);
+    if (miss) { this.fx.sound('error'); return miss; }
+    this.pay(plan.cost);
+    for (const [tx, ty, dir] of plan.tiles) {
+      const b = this.machines.create('conveyor', tx, ty, dir);
+      b.built = 0;
+      this.stats.built++;
+      this.fx.burst((tx + 0.5) * TILE, (ty + 0.5) * TILE, 'build', 3);
+    }
+    this.machines.linksDirty = true;
+    this.fx.sound('build');
+    return null;
+  }
+
+  /**
+   * A good spot to place a machine near a point: valid tile, lots of garbage within the machine's
+   * reach, close to the point and (preferably) inside a depot service area.
+   */
+  findSpot(type: MachineType, fromX: number, fromY: number): { tx: number; ty: number } | null {
+    const def = MACHINES[type];
+    const s = def.size;
+    const R = 16;
+    const hubs = this.machines.hubs();
+    const reach = def.radius > 0 && !isHub(type) ? def.radius * this.d.machineRadiusMult : 0;
+    const step = reach > 8 ? 2 : 1;
+    const w = this.world;
+    let best: { tx: number; ty: number } | null = null, bs = Infinity;
+    for (let y = Math.floor(fromY) - R; y <= Math.floor(fromY) + R; y++) for (let x = Math.floor(fromX) - R; x <= Math.floor(fromX) + R; x++) {
+      const d = Math.hypot(x + s / 2 - fromX, y + s / 2 - fromY);
+      if (d > R) continue;
+      if (this.placeProblem(type, x, y)) continue;
+      let score = d * 0.45;
+      if (reach > 0) {
+        let g = 0;
+        const cx = x + s / 2, cy = y + s / 2, rr = Math.ceil(reach);
+        for (let yy = -rr; yy <= rr; yy += step) for (let xx = -rr; xx <= rr; xx += step) {
+          if (xx * xx + yy * yy > reach * reach) continue;
+          const tx = Math.floor(cx + xx), ty = Math.floor(cy + yy);
+          if (inWorld(tx, ty)) g += w.garbage[tileIndex(tx, ty)];
+        }
+        if (g === 0) continue;
+        score -= Math.log(1 + g * step * step) * 2.2;
+      }
+      if (type !== 'conveyor' && type !== 'separator' && type !== 'recycler' && !hubs.some((h) => Math.hypot(centerX(h) - x - s / 2, centerY(h) - y - s / 2) <= hubRadius(h, this.d))) score += 3.5;
+      if (score < bs) { bs = score; best = { tx: x, ty: y }; }
+    }
+    return best;
   }
 
   emptyMachineIntoBackpack(m: Machine): number {

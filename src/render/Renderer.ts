@@ -25,6 +25,8 @@ export class Renderer {
   showRanges = false;
   selected: Machine | null = null;
   endingT = -1;
+  /** when set, the camera follows this point instead of the player */
+  focus: { x: number; y: number } | null = null;
   life: Life;
 
   constructor(canvas: HTMLCanvasElement, private game: Game, public chunks: ChunkRenderer, public fx: Effects) {
@@ -61,8 +63,10 @@ export class Renderer {
     cam.zoom += (cam.targetZoom - cam.zoom) * Math.min(1, dt * 8);
     const p = g.player;
     const lead = 18;
-    cam.x += (p.x + p.vx * lead - cam.x) * Math.min(1, dt * 5);
-    cam.y += (p.y - 10 + p.vy * lead - cam.y) * Math.min(1, dt * 5);
+    const fxp = this.focus ? this.focus.x : p.x + p.vx * lead;
+    const fyp = this.focus ? this.focus.y : p.y - 10 + p.vy * lead;
+    cam.x += (fxp - cam.x) * Math.min(1, dt * (this.focus ? 7 : 5));
+    cam.y += (fyp - cam.y) * Math.min(1, dt * (this.focus ? 7 : 5));
     const hw = this.W / 2 / cam.zoom, hh = this.H / 2 / cam.zoom;
     cam.x = clamp(cam.x, Math.min(hw, WORLD_PX / 2), Math.max(WORLD_PX - hw, WORLD_PX / 2));
     cam.y = clamp(cam.y, Math.min(hh, WORLD_PX / 2), Math.max(WORLD_PX - hh, WORLD_PX / 2));

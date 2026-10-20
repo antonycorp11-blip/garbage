@@ -1,7 +1,7 @@
 export interface PointerSink {
   /** returns true if the press should become "collect while held" */
   worldDown(sx: number, sy: number, touch: boolean): boolean;
-  worldMove(sx: number, sy: number, touch: boolean): void;
+  worldMove(sx: number, sy: number, touch?: boolean): void;
   worldUp(sx: number, sy: number, touch: boolean, tap: boolean): void;
   cancel(): void;
   zoom(factor: number): void;

@@ -4,7 +4,7 @@ import { MACHINES } from '../data/machines';
 import { Game } from '../game/Game';
 import { BOT_GO, BOT_RETURN, BOT_WORK, Bot, Machine, machineBufferCap } from '../game/Machines';
 import {
-  blit, bolt, box34, cable, cachedLayer, contactShadow, corrugated, cylinder34, gauge, glow, hazardStripes, lamp,
+  INK, INK_W, blit, bolt, box34, cable, cachedLayer, contactShadow, corrugated, cylinder34, gauge, glow, hazardStripes, lamp,
   levelStars, pipe, plate, rivet, rivetRow, stencil, vent, weather, windowGlass,
 } from './detail';
 import { Effects } from './Effects';
@@ -165,67 +165,72 @@ export function drawMachine(c: C, m: Machine, g: Game, time: number, fx: Effects
 // COLLECTOR
 // =====================================================================================================
 function collectorBase(level: number) {
-  return cachedLayer(`collector-${level}`, -8, -30, 48, 66, (c) => {
+  return cachedLayer(`collector2-${level}`, -12, -48, 56, 86, (c) => {
     const col = LEVEL_COLORS[level - 1];
-    groundShadow(c, 18, 27, 18, 7, 0.45);
-    // legs
-    for (const [lx, ly] of [[4, 25], [28, 25], [6, 17], [26, 17]]) {
-      pipe(c, [16 + (lx - 16) * 0.5, ly - 6, lx, ly], 2, '#4b5257');
-      c.fillStyle = '#2b2f33'; ellipse(c, lx, ly + 0.6, 2.6, 1.2); c.fill();
-      bolt(c, lx, ly, 0.7);
-    }
-    // plinth
-    box34(c, 3, 12, 26, 6, 9, '#6f787e', 1.5);
-    hazardStripes(c, 3.6, 22, 24.8, 2.4);
-    rivetRow(c, 5, 19.5, 27, 19.5, 6, 0.55);
-    weather(c, 3, 12, 26, 15, 0.6, level * 3 + 1);
-    // drum
-    cylinder34(c, 16, -6, 11, 18, col, 2);
-    weather(c, 5, -6, 22, 20, 0.45, level * 5 + 2);
-    stencil(c, `C-0${level}`, 16, 6.5, 3.6, 'rgba(255,255,255,0.75)');
-    // control box (left)
-    box34(c, -4, 2, 8, 3, 9, '#46505a', 1);
-    vent(c, -3, 6.5, 6, 2.8, 3);
-    gauge(c, 0, 12.2, 1.6, -0.5);
-    cable(c, 0, 14, 6, 26, 3);
-    // hopper (right)
-    box34(c, 25, 4, 10, 4, 10, '#4a4f54', 1);
-    c.fillStyle = '#121416'; rrect(c, 27, 9, 6, 3.4, 0.6); c.fill();
-    // exhaust
-    pipe(c, [24, 0, 24, -14, 26.5, -17], 2.4, '#6b7378');
-    c.fillStyle = '#222'; ellipse(c, 26.8, -17.3, 1.4, 0.7); c.fill();
-    // intake ring + grate
-    ellipse(c, 16, -6, 9.6, 4.1); c.fillStyle = '#0f1112'; c.fill();
-    c.strokeStyle = '#8b959b'; c.lineWidth = 1.1; ellipse(c, 16, -6, 9.8, 4.2); c.stroke();
-    rivetRow(c, 7.5, -4.5, 24.5, -4.5, 6, 0.45);
-    if (level >= 3) { pipe(c, [9, -6, 7, -22], 0.9, '#444'); }
-    if (level >= 5) { c.strokeStyle = '#f2c94c'; c.lineWidth = 0.9; ellipse(c, 16, 12, 11, 4.6); c.stroke(); }
-    levelStars(c, 16, 30.5, level);
+    groundShadow(c, 18, 29, 20, 7.5, 0.45);
+    // flexible suction hose to the ground
+    pipe(c, [27, 2, 34, 8, 35, 22, 30, 28], 3.2, '#3d4348');
+    c.fillStyle = '#23272b'; ellipse(c, 29.5, 28.4, 3.4, 1.4); c.fill();
+    // base
+    box34(c, 1, 16, 30, 6, 9, '#7d878d', 2);
+    hazardStripes(c, 2, 25.2, 28, 2.6);
+    bolt(c, 4.5, 19, 0.9); bolt(c, 27.5, 19, 0.9);
+    // tall drum
+    cylinder34(c, 16, -16, 11.5, 33, col, 2);
+    weather(c, 4.5, -16, 23, 33, 0.35, level * 5 + 2);
+    // porthole frame (contents are drawn live)
+    c.beginPath(); c.arc(16, 2, 5.6, 0, 6.28); c.fillStyle = '#cfd6da'; c.fill();
+    c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+    for (let i = 0; i < 6; i++) { const a = (i / 6) * 6.28; rivet(c, 16 + Math.cos(a) * 4.7, 2 + Math.sin(a) * 4.7, 0.45); }
+    // label plate
+    rrect(c, 10.5, 10, 11, 4.2, 1); c.fillStyle = '#f2e9d0'; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.7; c.stroke();
+    stencil(c, `C-0${level}`, 16, 12.2, 3.2, INK);
+    // funnel intake on top
+    c.beginPath(); c.moveTo(3, -19); c.lineTo(29, -19); c.lineTo(27.5, -14.5); c.lineTo(4.5, -14.5); c.closePath();
+    c.fillStyle = shade(col, -0.25); c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+    ellipse(c, 16, -19, 13, 5.4); c.fillStyle = '#9aa4aa'; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+    ellipse(c, 16, -19, 10.6, 4.2); c.fillStyle = '#15181b'; c.fill();
+    // exhaust stack and antenna
+    pipe(c, [6, -6, 2, -10, 2, -26], 2.6, '#6b7378');
+    c.fillStyle = INK; ellipse(c, 2, -26.4, 1.6, 0.8); c.fill();
+    if (level >= 3) { pipe(c, [27, -12, 30, -34], 0.9, '#4b5257'); }
+    if (level >= 5) { c.strokeStyle = '#ffd54f'; c.lineWidth = 1.6; ellipse(c, 16, 17, 11.6, 4.8); c.stroke(); }
+    levelStars(c, 16, 33.5, level);
   });
 }
 
 function drawCollector(c: C, m: Machine, x: number, y: number, time: number, working: boolean, fx: Effects, onScreen: boolean) {
   blit(c, collectorBase(m.level), x, y);
-  const cx = x + 16, cy = y - 6;
-  // spinning fan
-  c.save(); c.translate(cx, cy); c.scale(1, 0.43); c.rotate(working ? time * 16 : time * 0.4);
+  const cx = x + 16, cy = y - 19;
+  // spinning fan inside the funnel
+  c.save(); c.translate(cx, cy); c.scale(1, 0.4); c.rotate(working ? time * 16 : time * 0.4);
   for (let i = 0; i < 6; i++) {
     c.rotate(1.047);
-    c.beginPath(); c.moveTo(0, 0); c.quadraticCurveTo(5, -2.6, 8.5, 1); c.lineTo(1.4, 1.6); c.closePath();
-    c.fillStyle = i % 2 ? '#aab3b9' : '#8a949a'; c.fill();
+    c.beginPath(); c.moveTo(0, 0); c.quadraticCurveTo(5.5, -3, 9.5, 1); c.lineTo(1.6, 1.8); c.closePath();
+    c.fillStyle = i % 2 ? '#c3ccd1' : '#9aa4aa'; c.fill();
   }
-  c.fillStyle = rad(c, -0.5, -0.5, 0, 2.2, [[0, '#fff'], [1, '#6b757b']]); c.beginPath(); c.arc(0, 0, 2, 0, 6.28); c.fill();
+  c.fillStyle = '#e8ecee'; c.beginPath(); c.arc(0, 0, 2.2, 0, 6.28); c.fill();
   c.restore();
-  if (working) { c.save(); c.globalCompositeOperation = 'lighter'; c.fillStyle = 'rgba(180,220,255,0.12)'; ellipse(c, cx, cy, 8.6, 3.6); c.fill(); c.restore(); }
-  // hopper fill
-  const fill = Math.min(1, m.bufferTotal / Math.max(1, MACHINES.collector.buffer * (1 + 0.3 * (m.level - 1))));
-  if (fill > 0) { c.fillStyle = fill >= 1 ? '#f87171' : '#a3e635'; c.fillRect(x + 27.4, y + 9.4 + 3 * (1 - fill), 5.2, 3 * fill); }
-  lamp(c, x - 2, y + 4, statusColor(m), !working || Math.sin(time * 5) > -0.4, 1);
-  if (m.level >= 3) lamp(c, x + 7, y - 22.5, '#f87171', Math.sin(time * 2.5 + m.id) > 0.3, 1);
+  if (working) { c.save(); c.globalCompositeOperation = 'lighter'; c.fillStyle = 'rgba(180,220,255,0.15)'; ellipse(c, cx, cy, 10, 4); c.fill(); c.restore(); }
+  // porthole shows how full the bin is
+  const cap = Math.max(1, MACHINES.collector.buffer * (1 + 0.3 * (m.level - 1)));
+  const fill = Math.min(1, m.bufferTotal / cap);
+  c.save(); c.beginPath(); c.arc(x + 16, y + 2, 4.3, 0, 6.28); c.clip();
+  c.fillStyle = '#1d2b33'; c.fillRect(x + 11, y - 3, 10, 10);
+  if (fill > 0) {
+    const top = y + 6.3 - 8.6 * fill;
+    const cols = ['#4fc3f7', '#e0c08f', '#cfd8dc', '#86efac', '#ffd54f'];
+    for (let i = 0; i < 10; i++) { c.fillStyle = cols[i % 5]; c.fillRect(x + 11.5 + (i * 3.7) % 9, top + (i % 3) * 1.6 + Math.sin(time * 6 + i) * (working ? 0.4 : 0), 2.2, 2); }
+    c.fillStyle = 'rgba(140,90,40,0.5)'; c.fillRect(x + 11, top + 3, 10, 10);
+  }
+  c.fillStyle = 'rgba(255,255,255,0.45)'; c.beginPath(); c.ellipse(x + 14.5, y + 0.2, 1.6, 0.9, -0.6, 0, 6.28); c.fill();
+  c.restore();
+  lamp(c, x + 16, y + 19, statusColor(m), !working || Math.sin(time * 5) > -0.4, 1.3);
+  if (m.level >= 3) lamp(c, x + 30, y - 34.5, '#f87171', Math.sin(time * 2.5 + m.id) > 0.3, 1.1);
   if (working && onScreen) {
     const tp = targetPos(m);
     if (tp && Math.random() < 0.55) fx.suck(tp[0] + (Math.random() - 0.5) * 22, tp[1] + (Math.random() - 0.5) * 22, cx, cy, Math.floor(Math.random() * 3), 0.5);
-    if (Math.random() < 0.05) fx.smoke(x + 26.8, y - 18);
+    if (Math.random() < 0.06) fx.smoke(x + 2, y - 28);
   }
 }
 
@@ -233,34 +238,27 @@ function drawCollector(c: C, m: Machine, x: number, y: number, time: number, wor
 // MECHANICAL ARM
 // =====================================================================================================
 function armBase(level: number) {
-  return cachedLayer(`arm-${level}`, -6, -16, 44, 52, (c) => {
-    groundShadow(c, 17, 26, 17, 7, 0.4);
-    // base plate
-    box34(c, 1, 8, 30, 14, 6, '#5d666c', 2);
-    hazardStripes(c, 1.6, 23, 28.8, 2.2);
-    for (const [bx, by] of [[4, 11], [28, 11], [4, 19.5], [28, 19.5]]) bolt(c, bx, by, 1.1);
-    weather(c, 1, 8, 30, 20, 0.7, level + 11);
+  return cachedLayer(`arm2-${level}`, -10, -24, 56, 64, (c) => {
+    groundShadow(c, 17, 28, 19, 7, 0.42);
     // hydraulic power unit at the back
-    box34(c, 3, -6, 12, 4, 10, '#c26a17', 1.2);
-    vent(c, 5, -1, 8, 3, 3);
-    gauge(c, 11.5, 5.5, 1.4, 0.4 + level * 0.3);
-    box34(c, 18, -3, 9, 3, 8, '#3f474d', 1);
-    stencil(c, 'HID', 22.5, 3.5, 2.6, 'rgba(255,255,255,0.6)');
-    // hoses to turret
-    cable(c, 9, 4, 15, 13, 2, '#1c1c1e', 1.3);
-    cable(c, 22, 4, 18, 13, 2, '#27272a', 1.3);
-    // turret ring
-    ellipse(c, 16, 15, 8.5, 4.5); c.fillStyle = '#2b3034'; c.fill();
-    ellipse(c, 16, 14.2, 8.5, 4.5); c.fillStyle = lin(c, 8, 10, 24, 18, [[0, '#a7b0b5'], [1, '#4a5257']]); c.fill();
-    c.strokeStyle = '#1e2224'; c.lineWidth = 0.6; c.stroke();
-    for (let i = 0; i < 8; i++) { const a = (i / 8) * 6.28; rivet(c, 16 + Math.cos(a) * 6.8, 14.2 + Math.sin(a) * 3.5, 0.45); }
-    levelStars(c, 16, 30, level);
+    box34(c, 0, -8, 14, 5, 12, '#e07b1a', 1.6);
+    vent(c, 2.5, -1.5, 9, 4, 3);
+    gauge(c, 11, 6.5, 1.8, 0.4 + level * 0.3);
+    // heavy base
+    box34(c, 1, 8, 30, 12, 10, '#5d676d', 2.2);
+    hazardStripes(c, 2, 26, 28, 2.6);
+    for (const [bx, by] of [[4.5, 11.5], [27.5, 11.5], [4.5, 17.5], [27.5, 17.5]]) bolt(c, bx, by, 1.1);
+    cable(c, 7, 6, 13, 13, 3, '#1e1e22', 1.4);
+    // turret drum
+    cylinder34(c, 16, 6, 8.5, 7, '#f39a2c', 1);
+    for (let i = 0; i < 6; i++) { const a = (i / 6) * 6.28; rivet(c, 16 + Math.cos(a) * 6.5, 6 + Math.sin(a) * 2.6, 0.45); }
+    levelStars(c, 16, 33, level);
   });
 }
 
 function drawArm(c: C, m: Machine, x: number, y: number, time: number, working: boolean, fx: Effects, onScreen: boolean) {
   blit(c, armBase(m.level), x, y);
-  const cx = x + 16, cy = y + 13;
+  const cx = x + 16, cy = y + 8;
   const tp = targetPos(m);
   let ang = Math.sin(time * 0.6 + m.id) * 1.2 - 1.2;
   let reach = 18;
@@ -286,36 +284,39 @@ function drawArm(c: C, m: Machine, x: number, y: number, time: number, working: 
     const a = Math.atan2(y1 - y0, x1 - x0), l = Math.hypot(x1 - x0, y1 - y0);
     c.save(); c.translate(x0, y0); c.rotate(a);
     rrect(c, -w / 2, -w / 2, l + w, w, w / 2);
-    c.fillStyle = lin(c, 0, -w / 2, 0, w / 2, [[0, shade(col, 0.4)], [0.5, col], [1, shade(col, -0.45)]]); c.fill();
-    c.strokeStyle = shade(col, -0.65); c.lineWidth = 0.6; c.stroke();
+    c.fillStyle = col; c.fill();
+    c.save(); rrect(c, -w / 2, -w / 2, l + w, w, w / 2); c.clip(); c.fillStyle = shade(col, -0.25); c.fillRect(-w, w * 0.1, l + 2 * w, w); c.fillStyle = 'rgba(255,255,255,0.35)'; c.fillRect(-w, -w * 0.38, l + 2 * w, w * 0.18); c.restore();
+    rrect(c, -w / 2, -w / 2, l + w, w, w / 2); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
     hazardStripes(c, l * 0.55, -w / 2 + 0.4, l * 0.18, w - 0.8);
     c.restore();
   };
-  seg(sx, sy, jx, jy, 5, '#f0a63a');
+  seg(sx, sy, jx, jy, 6.4, '#f39a2c');
   // hydraulic piston parallel to the first segment
   const pa = Math.atan2(jy - sy, jx - sx);
   const px0 = sx + Math.cos(pa + 1.57) * 3.2, py0 = sy + Math.sin(pa + 1.57) * 3.2;
   const plen = Math.hypot(jx - sx, jy - sy) * (0.55 + pump * 0.15);
   pipe(c, [px0, py0, px0 + Math.cos(pa) * plen * 0.6, py0 + Math.sin(pa) * plen * 0.6], 2.2, '#5d666c');
   pipe(c, [px0 + Math.cos(pa) * plen * 0.6, py0 + Math.sin(pa) * plen * 0.6, px0 + Math.cos(pa) * plen, py0 + Math.sin(pa) * plen], 1.2, '#e4e8ea');
-  seg(jx, jy, ex, ey, 3.8, '#f5b94f');
+  seg(jx, jy, ex, ey, 5, '#f7b54a');
   cable(c, sx + 2, sy, jx + 1, jy + 1, 3, '#1e1e20', 0.8);
   // joints
   for (const [jxx, jyy] of [[sx, sy], [jx, jy]]) {
-    c.fillStyle = rad(c, jxx - 0.8, jyy - 0.8, 0, 3.2, [[0, '#cfd8dc'], [1, '#37474f']]); c.beginPath(); c.arc(jxx, jyy, 2.8, 0, 6.28); c.fill();
-    bolt(c, jxx, jyy, 0.9);
+    c.beginPath(); c.arc(jxx, jyy, 3.4, 0, 6.28); c.fillStyle = '#7d878d'; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+    bolt(c, jxx, jyy, 1.2);
   }
   // claw with three fingers
   const open = working ? 0.25 + pump * 0.7 : 0.5;
   c.save(); c.translate(ex, ey); c.rotate(ang + 0.3);
-  c.fillStyle = '#37474f'; rrect(c, -1.5, -2.4, 4, 4.8, 1); c.fill();
-  c.strokeStyle = '#263238'; c.lineWidth = 1.5; c.lineCap = 'round';
+  rrect(c, -2, -3.2, 5.5, 6.4, 1.6); c.fillStyle = '#4b5860'; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+  c.lineCap = 'round';
   for (const k of [-1, 0, 1]) {
     const a = k * (0.35 + open * 0.55);
-    c.beginPath(); c.moveTo(2, k * 1.2); c.lineTo(2 + Math.cos(a) * 4.5, k * 1.2 + Math.sin(a) * 4.5); c.lineTo(2 + Math.cos(a * 0.3) * 7.5, k * 1.2 + Math.sin(a) * 4.5 + Math.sin(a * 0.3) * 2); c.stroke();
+    const pth = () => { c.beginPath(); c.moveTo(3, k * 1.6); c.lineTo(3 + Math.cos(a) * 5.5, k * 1.6 + Math.sin(a) * 5.5); c.lineTo(3 + Math.cos(a * 0.3) * 9, k * 1.6 + Math.sin(a) * 5.5 + Math.sin(a * 0.3) * 2.4); };
+    pth(); c.strokeStyle = INK; c.lineWidth = 3.2; c.stroke();
+    pth(); c.strokeStyle = '#aeb8be'; c.lineWidth = 1.6; c.stroke();
   }
   c.restore();
-  lamp(c, x + 24.5, y + 0.5, statusColor(m), true, 0.9);
+  lamp(c, x + 26, y + 15, statusColor(m), true, 1.2);
   if (working && onScreen && tp && Math.random() < 0.1) fx.burst(tp[0], tp[1], 'dust', 1);
 }
 
@@ -412,24 +413,23 @@ function drawCrusher(c: C, m: Machine, x: number, y: number, time: number, worki
 // ROBOT STATION
 // =====================================================================================================
 function stationBase(level: number) {
-  return cachedLayer(`station-${level}`, -8, -30, 48, 66, (c) => {
-    groundShadow(c, 17, 25, 18, 7, 0.35);
-    // hexagonal pad
-    const hex = (r: number, oy: number) => { c.beginPath(); for (let i = 0; i < 6; i++) { const a = (i / 6) * 6.28 + Math.PI / 6; c.lineTo(16 + Math.cos(a) * r, 18 + oy + Math.sin(a) * r * 0.55); } c.closePath(); };
-    hex(16, 2.5); c.fillStyle = '#2e3338'; c.fill();
-    hex(16, 0); c.fillStyle = lin(c, 0, 9, 0, 27, [[0, '#8e979d'], [1, '#535b61']]); c.fill(); c.strokeStyle = '#22272a'; c.lineWidth = 0.8; c.stroke();
-    hex(12.5, 0); c.fillStyle = '#1f2428'; c.fill();
-    c.strokeStyle = '#facc15'; c.lineWidth = 1.2; ellipse(c, 16, 18, 8.5, 4.6); c.stroke();
-    stencil(c, 'R', 16, 18.3, 6, '#facc15');
-    for (let i = 0; i < 6; i++) { const a = (i / 6) * 6.28 + Math.PI / 6; hazardStripes(c, 16 + Math.cos(a) * 14 - 1.5, 18 + Math.sin(a) * 7.7 - 0.8, 3, 1.6); }
-    // charging pylon at the back
-    box34(c, 24, -12, 8, 3, 18, '#3c4a57', 1.2);
-    vent(c, 25.5, -6, 5, 6, 4);
-    cable(c, 28, 8, 22, 18, 3, '#111', 1.1);
-    // antenna mast + dish base
-    pipe(c, [6, 12, 6, -18], 1.2, '#4b5563');
-    c.strokeStyle = '#4b5563'; c.lineWidth = 0.5; c.beginPath(); c.moveTo(6, -10); c.lineTo(2, 12); c.moveTo(6, -10); c.lineTo(10, 12); c.stroke();
-    levelStars(c, 16, 31, level);
+  return cachedLayer(`station2-${level}`, -12, -50, 58, 90, (c) => {
+    groundShadow(c, 17, 27, 20, 8, 0.38);
+    const hex = (r: number, oy: number) => { c.beginPath(); for (let i = 0; i < 6; i++) { const a = (i / 6) * 6.28 + Math.PI / 6; c.lineTo(16 + Math.cos(a) * r, 19 + oy + Math.sin(a) * r * 0.56); } c.closePath(); };
+    hex(17, 3); c.fillStyle = '#3a4248'; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+    hex(17, 0); c.fillStyle = '#8f99a0'; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+    hex(13, 0); c.fillStyle = '#262d33'; c.fill();
+    c.strokeStyle = '#ffc928'; c.lineWidth = 1.6; ellipse(c, 16, 19, 9, 4.9); c.stroke();
+    stencil(c, 'R', 16, 19.4, 7, '#ffc928');
+    // charging tower
+    box34(c, 22, -22, 11, 4, 30, '#3f5b73', 1.6);
+    vent(c, 24, -14, 7, 7, 4);
+    rrect(c, 24, -4, 7, 5, 1); c.fillStyle = '#16232e'; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.6; c.stroke();
+    cable(c, 27, 9, 20, 19, 3, '#1e1e22', 1.2);
+    // antenna mast
+    pipe(c, [4, 16, 4, -32], 1.6, '#5a6570');
+    c.strokeStyle = INK; c.lineWidth = 0.9; c.beginPath(); c.moveTo(4, -20); c.lineTo(-1, 16); c.moveTo(4, -20); c.lineTo(9, 16); c.stroke();
+    levelStars(c, 16, 33.5, level);
   });
 }
 
@@ -437,17 +437,17 @@ function drawStation(c: C, m: Machine, x: number, y: number, time: number) {
   blit(c, stationBase(m.level), x, y);
   for (let i = 0; i < 6; i++) {
     const a = (i / 6) * 6.28 + Math.PI / 6;
-    lamp(c, x + 16 + Math.cos(a) * 10.5, y + 18 + Math.sin(a) * 5.8, '#38bdf8', Math.floor(time * 6) % 6 === i, 0.7);
+    lamp(c, x + 16 + Math.cos(a) * 11, y + 19 + Math.sin(a) * 6.1, '#38bdf8', Math.floor(time * 6) % 6 === i, 0.8);
   }
   // rotating dish
   const a = time * 0.8;
-  c.save(); c.translate(x + 6, y - 19);
-  c.scale(Math.cos(a) * 0.6 + 0.4 * Math.sign(Math.cos(a) || 1), 1);
-  c.fillStyle = lin(c, -5, -3, 5, 3, [[0, '#f5f5f5'], [1, '#9e9e9e']]); ellipse(c, 0, 0, 5, 3.2); c.fill();
-  c.strokeStyle = '#555'; c.lineWidth = 0.5; c.stroke();
-  c.beginPath(); c.moveTo(0, 0); c.lineTo(3, -2.5); c.stroke();
+  c.save(); c.translate(x + 4, y - 33);
+  const k = Math.cos(a);
+  c.scale(0.35 + 0.65 * Math.abs(k), 1);
+  ellipse(c, 0, 0, 6, 3.8); c.fillStyle = k > 0 ? '#f1f3f4' : '#b8c0c5'; c.fill(); c.strokeStyle = INK; c.lineWidth = 1; c.stroke();
+  c.beginPath(); c.moveTo(0, 0); c.lineTo(3.6, -3); c.strokeStyle = INK; c.lineWidth = 0.8; c.stroke();
   c.restore();
-  lamp(c, x + 28, y - 13.5, statusColor(m), true, 1);
+  lamp(c, x + 27.5, y - 23, statusColor(m), true, 1.2);
 }
 
 export function drawBots(c: C, m: Machine, time: number, fx: Effects, onScreen: boolean) {

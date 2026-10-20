@@ -211,26 +211,39 @@ export class UI {
     bar.style.display = 'flex';
     bar.innerHTML = `<div class="bb-h"><span class="name">${def.name}</span><span class="cost">${this.costHtml(cost)}</span></div>
       <div class="bb-msg"></div>
+      <div class="bb-pad mobile-only">
+        <button class="pad" data-n="-1,0" aria-label="Esquerda">◀</button><button class="pad" data-n="0,-1" aria-label="Cima">▲</button><button class="pad" data-n="0,1" aria-label="Baixo">▼</button><button class="pad" data-n="1,0" aria-label="Direita">▶</button>
+        ${belt ? `<button class="pad rot" data-a="rot" aria-label="Girar">↻</button>` : ''}
+      </div>
       <div class="bb-a">
-        ${belt ? `<button class="btn ghost" data-a="rot">↻ Girar <span class="key desk-only">R</span></button>` : ''}
+        ${belt ? `<button class="btn ghost desk-only" data-a="rot">↻ Girar <span class="key">R</span></button>` : ''}
         <button class="btn ghost" data-a="cancel">✕ Sair <span class="key desk-only">Esc</span></button>
-        ${belt ? '' : `<button class="btn green mobile-only" data-a="ok">✓ Construir aqui</button>`}
+        <button class="btn green mobile-only" data-a="ok">${belt ? '✓ Colocar esteira' : '✓ Construir aqui'}</button>
       </div>`;
     bar.querySelector('[data-a=cancel]')?.addEventListener('click', () => this.app.cancelBuild());
-    bar.querySelector('[data-a=rot]')?.addEventListener('click', () => { this.app.rotateBuild(); });
+    bar.querySelectorAll('[data-a=rot]').forEach((x) => x.addEventListener('click', () => { this.app.rotateBuild(); this.refreshBuildBar(); }));
     bar.querySelector('[data-a=ok]')?.addEventListener('click', () => this.app.confirmBuild());
+    bar.querySelectorAll('[data-n]').forEach((x) => x.addEventListener('click', () => { const [dx, dy] = (x as HTMLElement).dataset.n!.split(',').map(Number); this.app.nudgeBuild(dx, dy); }));
     this.refreshBuildBar();
   }
 
   refreshBuildBar() {
     const b = this.app.build;
     if (!b) return;
+    const g = this.game;
     const bar = this.el.buildbar;
     const touch = document.body.classList.contains('touch');
     const belt = isBelt(b.type);
     const msg = bar.querySelector('.bb-msg') as HTMLElement | null;
-    const tip = belt ? (touch ? 'Arraste o dedo para desenhar a esteira' : 'Clique e arraste para fazer a linha') : touch ? 'Arraste o dedo para posicionar' : 'Clique para construir';
-    if (msg) { msg.textContent = b.problem ? '⚠ ' + b.problem : tip; msg.classList.toggle('bad', !!b.problem); }
+    let tip = belt ? (touch ? 'Arraste para mover · ↻ muda a direção · cada toque em Colocar avança uma casa' : 'Clique e arraste para fazer a linha') : touch ? 'Arraste em qualquer lugar para mover · toque para pular até um lugar' : 'Clique para construir';
+    let warn = false;
+    if (!belt && !b.problem && b.type !== 'recycler') {
+      const s = MACHINES[b.type].size;
+      const inService = g.machines.hubs().some((h) => Math.hypot(centerX(h) - b.tx - s / 2, centerY(h) - b.ty - s / 2) <= hubRadius(h, g.d));
+      if (!inService) { tip = 'Fora do círculo do depósito: depois toque na máquina e use 🔗 Conectar'; warn = true; }
+      else tip = '✓ Ótimo lugar: dentro da área do depósito, entrega sozinha';
+    }
+    if (msg) { msg.textContent = b.problem ? '⚠ ' + b.problem : tip; msg.classList.toggle('bad', !!b.problem); msg.classList.toggle('warn', warn); msg.classList.toggle('good', !b.problem && !warn && !belt); }
     const ok = bar.querySelector('[data-a=ok]') as HTMLElement | null;
     if (ok) ok.classList.toggle('disabled', !!b.problem);
   }
@@ -273,6 +286,8 @@ export class UI {
     const canUp = MACHINES[m.type].buildable && m.type !== 'conveyor' && m.level < MAX_MACHINE_LEVEL;
     const upCost = Math.ceil(machineUpgradeCost(m.type, m.level) * d.costMult);
     const near = Math.hypot(g.player.tx - centerX(m), g.player.ty - centerY(m)) < def.size / 2 + 2;
+    const needsLink = def.buffer > 0 && !m.inService && !(m.outConveyor >= 0 && m.linked);
+    const plan = needsLink && g.isUnlocked('conveyor') ? g.planConnection(m) : null;
     const kv: string[] = [];
     if (def.rate > 0) kv.push(`<span>Velocidade</span><span>${fmtShort(machineRate(m, d) * (m.type === 'robots' ? botCount(m, d) : 1))}/s</span>`);
     if (def.radius > 0 && !isHub(m.type)) kv.push(`<span>Alcance</span><span>${machineRadius(m, d).toFixed(1)} m</span>`);
@@ -285,6 +300,7 @@ export class UI {
       <div class="kv">${kv.join('')}</div>
       <div class="st ${cls}">${status}</div>
       <div class="acts">
+        ${needsLink ? (plan ? `<button class="btn ${g.missingFor(plan.cost) ? 'disabled' : ''} wide" data-a="link">🔗 Conectar ao depósito · ${plan.tiles.length} esteiras · ${fmtMoney(plan.cost.money)}</button>` : `<div class="st bad wide">${g.isUnlocked('conveyor') ? 'Sem caminho limpo até o depósito: limpe o lixo entre eles' : 'Para entregar de longe, desbloqueie Logística (esteiras)'}</div>`) : ''}
         ${canUp ? `<button class="btn ${g.money < upCost ? 'disabled' : 'green'}" data-a="up">Melhorar ${fmtMoney(upCost)}</button>` : ''}
         ${m.bufferTotal > 0 ? `<button class="btn ${near ? '' : 'disabled'}" data-a="empty" title="Chegue perto">Esvaziar na mochila</button>` : ''}
         ${isBelt(m.type) ? `<button class="btn ghost" data-a="rot">↻ Girar</button>` : ''}
@@ -295,6 +311,7 @@ export class UI {
     p.querySelector('[data-a=empty]')?.addEventListener('click', () => { if (near) g.emptyMachineIntoBackpack(m); else this.toastErr('Chegue mais perto da máquina'); this.mpanelT = 0; });
     p.querySelector('[data-a=rot]')?.addEventListener('click', () => { m.dir = (m.dir + 1) % 4; g.machines.linksDirty = true; this.app.audio.play('click'); this.mpanelT = 0; });
     p.querySelector('[data-a=del]')?.addEventListener('click', () => { g.demolish(m); this.select(null); });
+    p.querySelector('[data-a=link]')?.addEventListener('click', () => { const e = g.connectToDepot(m); if (e) { this.app.audio.play('error'); this.toastErr(e); } else this.message('Esteiras construídas! Os materiais agora vão sozinhos até o depósito.', 'Sistema'); this.mpanelT = 0; });
   }
 
   toastErr(text: string) {

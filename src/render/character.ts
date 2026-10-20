@@ -47,7 +47,7 @@ export function drawWorker(c: C, x: number, y: number, time: number, o: WorkerPo
   const bagS = 1 + Math.min(0.7, o.bagLvl * 0.05) + o.fill * 0.08;
   const bagCol = o.bagLvl >= 9 ? '#5d6b3a' : o.bagLvl >= 4 ? '#8a6a32' : '#8b6b45';
 
-  groundShadow(c, x, y + 0.5, 10, 4, 0.42);
+  groundShadow(c, x, y + 0.5, 13, 5, 0.42);
   if (o.tier >= 6) {
     c.save(); c.globalCompositeOperation = 'lighter';
     c.fillStyle = rad(c, x, y - 12, 0, 26, [[0, 'rgba(0,229,255,0.22)'], [1, 'rgba(0,229,255,0)']]);
@@ -56,7 +56,10 @@ export function drawWorker(c: C, x: number, y: number, time: number, o: WorkerPo
   }
   c.save();
   c.translate(x, y - bob);
-  if (dir === 'left') c.scale(-1, 1);
+  // squash & stretch: bouncy steps when walking, gentle breathing when idle
+  const sq = o.moving ? Math.cos(walk * 2) * 0.05 : Math.sin(time * 2.4) * 0.018;
+  const S = 1.3;
+  c.scale(S * (1 + sq) * (dir === 'left' ? -1 : 1), S * (1 - sq));
 
   // ------------------------------------------------------------- shared parts
   const boot = (bx: number, by: number, w: number, fwd: number) => {
@@ -102,8 +105,9 @@ export function drawWorker(c: C, x: number, y: number, time: number, o: WorkerPo
       if (blink) { c.strokeStyle = OL; c.lineWidth = 0.9; c.beginPath(); c.moveTo(-3.6, -23); c.lineTo(-1.6, -23); c.moveTo(1.6, -23); c.lineTo(3.6, -23); c.stroke(); }
       else {
         for (const ex of [-2.6, 2.6]) {
-          c.fillStyle = OL; ellipse(c, ex, -23, 1.15, 1.65); c.fill();
-          c.fillStyle = '#fff'; c.beginPath(); c.arc(ex + 0.4, -23.6, 0.45, 0, 6.28); c.fill();
+          c.fillStyle = OL; ellipse(c, ex, -22.9, 1.35, 1.95); c.fill();
+          c.fillStyle = '#fff'; c.beginPath(); c.arc(ex + 0.45, -23.6, 0.55, 0, 6.28); c.fill();
+          c.fillStyle = 'rgba(255,255,255,0.6)'; c.beginPath(); c.arc(ex - 0.4, -22.1, 0.3, 0, 6.28); c.fill();
         }
       }
       c.strokeStyle = HAIR; c.lineWidth = 0.8;

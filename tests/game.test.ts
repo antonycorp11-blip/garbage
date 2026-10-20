@@ -138,4 +138,27 @@ describe('Game', () => {
     expect(g3.remaining).toBe(TOTAL_GARBAGE);
     expect(WORLD_TILES).toBe(192);
   });
+
+  it('auto-connects a far machine to the depot with conveyors', () => {
+    const g = new Game();
+    g.money = 1e9; g.storage = [1e6, 1e6, 1e6, 1e6, 1e6, 0];
+    g.upgrades.a_arm = 1; g.upgrades.a_belts = 1;
+    g.autoSell = [false, false, false, false, false, false];
+    g.recompute();
+    // an L-shaped clean corridor from the depot to a far spot
+    clearArea(g, CENTER + 2, CENTER, CENTER + 18, CENTER);
+    clearArea(g, CENTER + 18, CENTER, CENTER + 18, CENTER + 10);
+    clearArea(g, CENTER + 17, CENTER + 11, CENTER + 19, CENTER + 12);
+    expect(g.build('collector', CENTER + 18, CENTER + 12)).toBeNull();
+    const m = g.machines.machines.find((x) => x.type === 'collector')!;
+    g.update(0.1, idle);
+    expect(m.inService).toBe(false);
+    const plan = g.planConnection(m)!;
+    expect(plan).not.toBeNull();
+    expect(g.connectToDepot(m)).toBeNull();
+    const st0 = sumMats(g.storage);
+    for (let i = 0; i < 400; i++) g.update(0.1, idle);
+    expect(m.linked).toBe(true);
+    expect(sumMats(g.storage)).toBeGreaterThan(st0);
+  });
 });
