@@ -587,7 +587,7 @@ export class UI {
         if (def.radius > 0 && def.role === 'coleta') stats.push(`◎ ${def.radius} m`);
         if (def.process > 0) stats.push(`⚙ +${def.process}/s`);
         if (def.yard > 0) stats.push(`▦ +${def.yard}`);
-        const tag = def.role === 'coleta' ? (def.heavy ? '<span class="tag hv">🏋 pesado</span>' : '<span class="tag">leve</span>') : '';
+        const tag = def.role === 'coleta' && def.heavy ? '<span class="tag hv" title="ergue sucata pesada">🏋</span>' : '';
         const lockTxt = def.unlock ? UPGRADE_MAP[def.unlock].name : '';
         html += `<div class="mcard ${role} ${unl ? (miss ? 'short' : 'ready') : 'locked'} ${open ? 'open' : ''}" data-card="${t}">
           <div class="art"><img src="${this.machineThumb(t)}" alt=""/>${owned ? `<span class="cnt">×${owned}</span>` : ''}${tag}${unl ? '' : '<span class="lk">🔒</span>'}</div>
@@ -687,18 +687,20 @@ export class UI {
     setTimeout(() => b.remove(), 3600);
   }
 
+  /** Compact requirement chips: icon, have/need and a thin progress bar each. */
   private reqRows(req: number[], delivered: number[] | null) {
     const g = this.game;
-    let html = '';
+    let html = '<div class="rqs">';
     for (let k = 0; k < MAT_COUNT; k++) {
       if (req[k] <= 0) continue;
       const m = MATERIALS[k];
       const done = delivered ? delivered[k] : 0;
       const silo = Math.min(req[k] - done, Math.floor(g.storage[k]));
+      const have = done + Math.max(0, silo);
       const pd = (100 * done) / req[k], ps = (100 * Math.max(0, silo)) / req[k];
-      html += `<div class="rq"><img class="mi big" src="${matIconURL(k)}" alt=""/><span class="n">${m.name}</span><span class="q"><b>${fmtInt(done + Math.max(0, silo))}</b>/${fmtInt(req[k])}</span><div class="rb"><i class="d" style="width:${pd}%"></i><i class="s" style="width:${ps}%;left:${pd}%;background:${m.color}"></i></div></div>`;
+      html += `<div class="rq ${have >= req[k] ? 'ok' : ''}" title="${m.name}"><img class="mi" src="${matIconURL(k)}" alt=""/><span class="q"><b>${fmtShort(have)}</b>/${fmtShort(req[k])}</span><div class="rb"><i class="d" style="width:${pd}%"></i><i class="s" style="width:${ps}%;left:${pd}%;background:${m.color}"></i></div></div>`;
     }
-    return html;
+    return html + '</div>';
   }
 
   private renderContracts(body: HTMLElement) {

@@ -534,6 +534,7 @@ export class Game {
     this.fx.burst((tx + s / 2) * TILE, (ty + s / 2) * TILE, 'build', type === 'conveyor' ? 4 : 18);
     this.fx.sound('build', (tx + s / 2) * TILE, (ty + s / 2) * TILE);
     if (this.stats.built === 1) this.notify('Sua primeira máquina! Ela trabalha mesmo quando você não está olhando. Diferente de certos funcionários.');
+    if (type === 'separator' && this.machines.count('separator') === 1) this.notify('Separador instalado! Os pacotes que passam por ele ganham uma faixa colorida: entram direto nos silos (sem esperar no pátio) e valem +35%. Ele precisa estar no caminho da esteira até o posto.');
     if (type === 'conveyor' && this.machines.count('conveyor') === 1) this.notify('Esteiras levam materiais das máquinas até o posto. A seta mostra a direção. Tecla R gira.');
     return null;
   }

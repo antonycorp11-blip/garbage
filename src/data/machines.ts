@@ -55,8 +55,8 @@ export const MACHINES: Record<MachineType, MachineDef> = {
   separator: {
     ...D, type: 'separator', name: 'Separador de Materiais', short: 'Separador', role: 'processamento', size: 1, money: 1800, mats: [0, 60, 0, 0, 30, 0], costGrowth: 1.25,
     rate: 0, radius: 0, buffer: 0, unlock: 'r_sep', solid: false, buildable: true,
-    func: 'Separa o que passa na esteira: chega pronto aos silos, não ocupa o pátio e vale mais.',
-    desc: 'Instale no meio de uma esteira que vai até o posto. Essencial para linhas grandes e contratos apertados.',
+    func: 'Peça de esteira: tudo que passa por ele chega aos silos já separado, pula a fila do pátio e vale +35%.',
+    desc: 'Coloque no lugar de uma esteira, no meio da linha e apontando para o posto. Sem ele, o que as esteiras trazem entra no pátio e espera ser processado. Com ele, vai direto para os silos.',
   },
   crusher: {
     ...D, type: 'crusher', name: 'Prensa Compactadora', short: 'Prensa', role: 'processamento', size: 2, money: 4000, mats: [0, 180, 0, 0, 30, 0], costGrowth: 1.3,
