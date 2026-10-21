@@ -788,3 +788,8 @@ body.touch.panel-open .minimap { display: none; }
   .sk-detail { top: auto !important; bottom: 8px !important; right: 8px !important; left: auto !important; width: min(300px, 42%) !important; max-height: 70%; flex-direction: column; align-items: stretch; }
   .sk-ctrl { right: 8px !important; top: 8px !important; }
 }
+/* material icons */
+img.mi { width: 16px; height: 16px; vertical-align: -3px; margin-right: 3px; display: inline-block; }
+img.mi.big { width: 26px; height: 26px; margin: 0; }
+.ccard .rq { grid-template-columns: 26px 1fr auto; }
+.spot-pin img.pm { width: 18px; height: 18px; border: 0; border-radius: 0; margin-left: 2px; }

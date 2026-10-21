@@ -12,6 +12,7 @@ import { UPGRADES, UPGRADE_MAP } from '../data/upgrades';
 import { Game, GameEvent, SECTORS } from '../game/Game';
 import { MAX_EXTRA_DRONES, Machine, botCount, centerX, centerY, hubRadius, isBelt, isHub, machineBufferCap, machineRadius, machineRate } from '../game/Machines';
 import { drawTool, drawWorker } from '../render/character';
+import { matIconURL } from '../render/matIcons';
 import { drawBelt, drawMachine } from '../render/machinesDraw';
 import { drawDiscovery } from '../render/specialsDraw';
 import { ICONS } from './icons';
@@ -255,7 +256,7 @@ export class UI {
     // suggested spots + the chip that rides above the ghost
     const layer = h(`<div class="spots"></div>`);
     b.spots.forEach((sp, i) => {
-      const pin = h(`<button class="spot-pin" data-i="${i}"><span class="st">⭐</span>${sp.garbage > 0 ? `<span class="g">${fmtShort(sp.garbage)}</span>` : ''}${sp.mat >= 0 ? `<i class="pm" style="background:${MATERIALS[sp.mat].color}" title="bom para o contrato: ${MATERIALS[sp.mat].name}"></i>` : ''}</button>`);
+      const pin = h(`<button class="spot-pin" data-i="${i}"><span class="st">⭐</span>${sp.garbage > 0 ? `<span class="g">${fmtShort(sp.garbage)}</span>` : ''}${sp.mat >= 0 ? `<img class="pm" src="${matIconURL(sp.mat)}" title="bom para o contrato: ${MATERIALS[sp.mat].name}"></i>` : ''}</button>`);
       pin.addEventListener('click', (e) => { e.stopPropagation(); this.app.jumpToSpot(i); });
       layer.appendChild(pin);
     });
@@ -329,7 +330,7 @@ export class UI {
   private costHtml(cost: { money: number; mats: number[] }) {
     const g = this.game;
     let s = `<span class="cost ${g.money < cost.money ? 'no' : ''}">${fmtMoney(cost.money)}</span>`;
-    for (let k = 0; k < MAT_COUNT; k++) if (cost.mats[k] > 0) s += `<span class="cost ${g.storage[k] < cost.mats[k] ? 'no' : ''}"><i class="sw" style="background:${MATERIALS[k].color}"></i>${fmtShort(cost.mats[k])}</span>`;
+    for (let k = 0; k < MAT_COUNT; k++) if (cost.mats[k] > 0) s += `<span class="cost ${g.storage[k] < cost.mats[k] ? 'no' : ''}"><img class="mi" src="${matIconURL(k)}" alt=""/>${fmtShort(cost.mats[k])}</span>`;
     return `<span class="costs" style="display:inline-flex">${s}</span>`;
   }
 
@@ -662,7 +663,7 @@ export class UI {
     chip.querySelector('.ct')!.textContent = `📦 ${act.length > 1 ? `${act.length} contratos` : 'Contrato'}`;
     chip.querySelector('.cd')!.textContent = '⏱ ' + this.planetTime(left);
     const parts: string[] = [];
-    for (let k = 0; k < MAT_COUNT; k++) if (c.req[k] > 0) parts.push(`<span><i class="sw" style="background:${MATERIALS[k].color}"></i>${fmtShort(Math.min(c.req[k], c.delivered[k] + g.storage[k]))}/${fmtShort(c.req[k])}</span>`);
+    for (let k = 0; k < MAT_COUNT; k++) if (c.req[k] > 0) parts.push(`<span><img class="mi" src="${matIconURL(k)}" alt=""/>${fmtShort(Math.min(c.req[k], c.delivered[k] + g.storage[k]))}/${fmtShort(c.req[k])}</span>`);
     const html = parts.join('');
     const cr = chip.querySelector('.cr') as HTMLElement;
     if (cr.innerHTML !== html) cr.innerHTML = html;
@@ -695,7 +696,7 @@ export class UI {
       const done = delivered ? delivered[k] : 0;
       const silo = Math.min(req[k] - done, Math.floor(g.storage[k]));
       const pd = (100 * done) / req[k], ps = (100 * Math.max(0, silo)) / req[k];
-      html += `<div class="rq"><i class="matsw" style="background:${m.color}"></i><span class="n">${m.name}</span><span class="q"><b>${fmtInt(done + Math.max(0, silo))}</b>/${fmtInt(req[k])}</span><div class="rb"><i class="d" style="width:${pd}%"></i><i class="s" style="width:${ps}%;left:${pd}%;background:${m.color}"></i></div></div>`;
+      html += `<div class="rq"><img class="mi big" src="${matIconURL(k)}" alt=""/><span class="n">${m.name}</span><span class="q"><b>${fmtInt(done + Math.max(0, silo))}</b>/${fmtInt(req[k])}</span><div class="rb"><i class="d" style="width:${pd}%"></i><i class="s" style="width:${ps}%;left:${pd}%;background:${m.color}"></i></div></div>`;
     }
     return html;
   }
@@ -813,7 +814,7 @@ export class UI {
       const m = MATERIALS[k];
       const val = g.storage[k] * g.d.value[k];
       total += val;
-      rows += `<div class="mat"><div class="mat-h"><i class="matsw" style="background:${m.color}"></i><div class="mat-n"><b>${m.name}</b><small>${fmtMoney(g.d.value[k])} por unidade</small></div><div class="mat-q"><b>${fmtInt(g.storage[k])}</b><small>${p.backpack[k] ? `+${fmtInt(p.backpack[k])} no tanque` : auto[k] > g.reserve[k] ? `guarda ${fmtShort(auto[k])} p/ máquinas` : 'no depósito'}</small></div></div>
+      rows += `<div class="mat"><div class="mat-h"><img class="mi big" src="${matIconURL(k)}" alt=""/><div class="mat-n"><b>${m.name}</b><small>${fmtMoney(g.d.value[k])} por unidade</small></div><div class="mat-q"><b>${fmtInt(g.storage[k])}</b><small>${p.backpack[k] ? `+${fmtInt(p.backpack[k])} no tanque` : auto[k] > g.reserve[k] ? `guarda ${fmtShort(auto[k])} p/ máquinas` : 'no depósito'}</small></div></div>
         <div class="mat-a"><button class="toggle ${g.autoSell[k] ? 'on' : ''}" data-auto="${k}">${g.autoSell[k] ? '✓ Auto-venda' : '✗ Auto-venda'}</button>
         <button class="toggle" data-res="${k}" title="Quantidade guardada para construções">Guardar ${fmtShort(g.reserve[k])}</button>
         <button class="btn ${g.storage[k] > 0 ? '' : 'disabled'}" data-sell="${k}">Vender ${fmtMoney(val)}</button></div></div>`;
@@ -866,7 +867,6 @@ export class UI {
   }
 
   private drawMinimap() {
-    if (document.body.classList.contains('touch')) return;
     const g = this.game;
     this.paintMap();
     const cv = this.el.minimap.querySelector('canvas') as HTMLCanvasElement;

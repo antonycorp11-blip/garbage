@@ -32,6 +32,41 @@ function tube(c: C, pts: number[], w: number, col: string) {
   c.strokeStyle = OL; c.lineWidth = w + 1.5; c.stroke();
   c.strokeStyle = col; c.lineWidth = w; c.stroke();
 }
+/** Chunky capsule segment (arms, struts, femurs): cel shading + outline + one highlight. */
+function seg(c: C, x1: number, y1: number, x2: number, y2: number, w: number, base: string, sh: string, lw = 1) {
+  const L = Math.hypot(x2 - x1, y2 - y1), a = Math.atan2(y2 - y1, x2 - x1);
+  c.save(); c.translate(x1, y1); c.rotate(a);
+  cel(c, rr(c, -w / 2, -w / 2, L + w, w, w / 2), base, sh, rr(c, -w / 2, w * 0.1, L + w, w, w * 0.4), lw);
+  c.strokeStyle = 'rgba(255,255,255,0.5)'; c.lineWidth = Math.max(0.45, w * 0.16); c.lineCap = 'round';
+  c.beginPath(); c.moveTo(0, -w * 0.2); c.lineTo(L, -w * 0.2); c.stroke();
+  c.restore();
+}
+/** Tapered limb from a thick end to a thin end. */
+function taper(c: C, x1: number, y1: number, x2: number, y2: number, w1: number, w2: number, base: string, sh: string) {
+  const L = Math.hypot(x2 - x1, y2 - y1), a = Math.atan2(y2 - y1, x2 - x1);
+  c.save(); c.translate(x1, y1); c.rotate(a);
+  const path = () => { c.beginPath(); c.moveTo(0, -w1 / 2); c.lineTo(L, -w2 / 2); c.arc(L, 0, w2 / 2, -Math.PI / 2, Math.PI / 2); c.lineTo(0, w1 / 2); c.arc(0, 0, w1 / 2, Math.PI / 2, Math.PI * 1.5); c.closePath(); };
+  cel(c, path, base, sh, () => { c.fillRect(-w1, 0.15, L + w1 * 2, w1); }, 0.95);
+  c.restore();
+}
+/** Round joint cap with a bolt. */
+function joint(c: C, x: number, y: number, r: number, cap = DARK) {
+  cel(c, circ(c, x, y, r), cap, shade(cap, -0.3), circ(c, x + r * 0.4, y + r * 0.4, r * 0.85), 0.9);
+  cel(c, circ(c, x, y, r * 0.45), METAL, null, null, 0.55);
+  c.fillStyle = 'rgba(255,255,255,0.7)'; c.beginPath(); c.arc(x - r * 0.38, y - r * 0.42, r * 0.17, 0, 6.28); c.fill();
+}
+/** Coil spring between two points (suspension). */
+function spring(c: C, x1: number, y1: number, x2: number, y2: number, w: number, turns: number) {
+  const pts: number[] = [];
+  for (let i = 0; i <= turns * 2; i++) {
+    const t = i / (turns * 2), side = i === 0 || i === turns * 2 ? 0 : i % 2 ? 1 : -1;
+    const dx = x2 - x1, dy = y2 - y1, L = Math.hypot(dx, dy) || 1;
+    pts.push(x1 + dx * t + (-dy / L) * side * w, y1 + dy * t + (dx / L) * side * w);
+  }
+  tube(c, pts, 0.9, '#e6edf2');
+}
+const bolt = (c: C, x: number, y: number, r = 0.45) => { c.fillStyle = OL; c.beginPath(); c.arc(x, y, r, 0, 6.28); c.fill(); };
+
 function glow(c: C, x: number, y: number, r: number, col: string, a: number) {
   c.save(); c.globalCompositeOperation = 'lighter';
   c.fillStyle = rad(c, x, y, 0, r, [[0, shade(col, 0, a)], [1, shade(col, 0, 0)]]);
@@ -75,7 +110,7 @@ export function drawWorker(c: C, x: number, y: number, time: number, o: WorkerPo
   const tS = 1 + Math.min(0.45, o.bagLvl * 0.035);
 
   // ride height: where the bottom of the pod sits
-  const H = move === 'treads' ? 7 : move === 'legs' ? 9.5 : hover ? 11 + Math.sin(time * 3) * 1.1 : 8.6;
+  const H = move === 'treads' ? 7.4 : move === 'legs' ? 10 : hover ? 12 + Math.sin(time * 3) * 1.1 : 11.4;
   const bob = hover ? 0 : o.moving ? Math.abs(Math.sin(walk)) * (move === 'legs' ? 0.9 : 0.6) : Math.sin(time * 2.4) * 0.35;
   const sq = hover ? Math.sin(time * 3 + 1) * 0.015 : o.moving ? Math.cos(walk * 2) * 0.035 : Math.sin(time * 2.4) * 0.02;
   const PW = side ? 20 : 22, PH = 16.5;
@@ -109,96 +144,164 @@ export function drawWorker(c: C, x: number, y: number, time: number, o: WorkerPo
 
   // ================================================================== locomotion
   const wheel = () => {
+    const spin = walk * 1.25;
     if (side) {
-      const cy = -4.4, r = 4.4;
-      // fork strut to the pod
-      tube(c, [0, cy, -2.5, podY + 1.5], 2.2, TEAL);
-      cel(c, circ(c, 0, cy, r), DARK, DARK_SH, circ(c, 1.3, cy + 1.3, r - 0.6), 1.2);
-      c.strokeStyle = '#59646e'; c.lineWidth = 0.9;
-      for (let i = 0; i < 8; i++) { const a = walk * 1.3 + i * 0.785; c.beginPath(); c.moveTo(Math.cos(a) * (r - 1.1), cy + Math.sin(a) * (r - 1.1)); c.lineTo(Math.cos(a) * (r - 0.2), cy + Math.sin(a) * (r - 0.2)); c.stroke(); }
-      cel(c, circ(c, 0, cy, 2.1), METAL, null, null, 0.9);
-      c.strokeStyle = OL; c.lineWidth = 0.7;
-      for (let i = 0; i < 3; i++) { const a = walk * 1.3 + i * 2.094; c.beginPath(); c.moveTo(0, cy); c.lineTo(Math.cos(a) * 2, cy + Math.sin(a) * 2); c.stroke(); }
-      cel(c, circ(c, 0, cy, 0.9), ORANGE, null, null, 0.6);
+      const cy = -5.7, r = 5.7;
+      const topY = podY + 1.2;
+      // suspension: strut + coil spring from the pod to the axle
+      seg(c, -2.2, topY, -0.6, cy, 1.6, DARK, DARK_SH, 0.8);
+      spring(c, 1.6, topY + 0.6, 1.0, cy - 2.2, 1.1, 3);
+      // tyre with chunky tread blocks
+      cel(c, circ(c, 0, cy, r), '#323b44', '#1e252c', circ(c, 1.5, cy + 1.5, r - 0.4), 1.2);
+      for (let i = 0; i < 10; i++) {
+        const a = spin + i * 0.6283;
+        c.save(); c.translate(Math.cos(a) * (r - 0.15), cy + Math.sin(a) * (r - 0.15)); c.rotate(a);
+        rrect(c, -0.75, -0.9, 1.5, 1.8, 0.45); c.fillStyle = '#4c5864'; c.fill(); c.strokeStyle = OL; c.lineWidth = 0.55; c.stroke();
+        c.restore();
+      }
+      c.strokeStyle = 'rgba(255,255,255,0.18)'; c.lineWidth = 0.8; c.beginPath(); c.arc(0, cy, r - 1.2, Math.PI * 1.05, Math.PI * 1.45); c.stroke();
+      // rim + hub cap with bolts
+      cel(c, circ(c, 0, cy, 3.4), METAL, METAL_SH, circ(c, 0.9, cy + 0.9, 3), 1);
+      cel(c, circ(c, 0, cy, 1.9), ORANGE, ORANGE_SH, circ(c, 0.6, cy + 0.6, 1.7), 0.8);
+      for (let i = 0; i < 4; i++) { const a = spin + i * 1.571; bolt(c, Math.cos(a) * 2.65, cy + Math.sin(a) * 2.65, 0.34); }
+      c.fillStyle = 'rgba(255,255,255,0.75)'; c.beginPath(); c.arc(-0.5, cy - 0.6, 0.45, 0, 6.28); c.fill();
+      // fork plate over the axle
+      cel(c, () => { c.beginPath(); c.moveTo(-3.4, topY + 0.4); c.lineTo(-0.8, topY + 0.4); c.lineTo(0.9, cy); c.lineTo(-1.2, cy + 0.8); c.closePath(); }, TEAL, TEAL_SH, () => { c.fillRect(-0.6, topY, 3, cy - topY + 2); }, 0.9);
+      bolt(c, -0.1, cy, 0.55);
       // fender
-      c.strokeStyle = OL; c.lineWidth = 2.6; c.beginPath(); c.arc(0, cy, r + 1.3, Math.PI * 1.15, Math.PI * 1.85); c.stroke();
-      c.strokeStyle = SHELL; c.lineWidth = 1.4; c.stroke();
+      c.lineCap = 'round';
+      c.strokeStyle = OL; c.lineWidth = 3.2; c.beginPath(); c.arc(0, cy, r + 1.5, Math.PI * 1.12, Math.PI * 1.88); c.stroke();
+      c.strokeStyle = SHELL; c.lineWidth = 1.9; c.stroke();
+      c.strokeStyle = ORANGE; c.lineWidth = 0.7; c.beginPath(); c.arc(0, cy, r + 1.5, Math.PI * 1.3, Math.PI * 1.7); c.stroke();
     } else {
-      tube(c, [-3.8, -4.4, -4.6, podY + 1.5], 2, TEAL);
-      tube(c, [3.8, -4.4, 4.6, podY + 1.5], 2, TEAL);
-      cel(c, rr(c, -3, -8.8, 6, 8.8, 2.8), DARK, DARK_SH, rr(c, 0.8, -8.8, 3, 8.8, 1.2), 1.2);
-      c.fillStyle = '#5c6873';
-      for (let i = 0; i < 3; i++) { const ty = -8 + ((walk * 1.8 + i * 2.6) % 7.6); c.fillRect(-2.2, ty, 4.4, 0.8); }
-      for (const sx of [-1, 1]) cel(c, circ(c, sx * 3.9, -4.4, 1.5), METAL, null, null, 0.8);
+      const cy = -5.7;
+      // fork arms on both sides
+      for (const sx of [-1, 1]) seg(c, sx * 4.6, podY + 0.8, sx * 4.4, cy, 2.2, TEAL, TEAL_SH, 0.9);
+      // tyre seen head-on, tread chevrons rolling
+      cel(c, rr(c, -3.5, cy - 5.7, 7, 11.4, 3.3), '#323b44', '#1e252c', rr(c, 1, cy - 5.7, 2.5, 11.4, 1.2), 1.2);
+      c.save(); rrect(c, -3.5, cy - 5.7, 7, 11.4, 3.3); c.clip();
+      c.strokeStyle = '#4c5864'; c.lineWidth = 1.1; c.lineCap = 'butt';
+      for (let i = 0; i < 5; i++) {
+        const ty = cy - 7 + ((spin * 2.2 + i * 2.8) % 14);
+        c.beginPath(); c.moveTo(-3.2, ty - 1); c.lineTo(0, ty + 0.6); c.lineTo(3.2, ty - 1); c.stroke();
+      }
+      c.fillStyle = 'rgba(255,255,255,0.14)'; c.fillRect(-2.6, cy - 5, 1, 9);
+      c.restore();
+      rrect(c, -3.5, cy - 5.7, 7, 11.4, 3.3); c.strokeStyle = OL; c.lineWidth = 1.2; c.stroke();
+      for (const sx of [-1, 1]) { cel(c, circ(c, sx * 4.5, cy, 1.9), METAL, METAL_SH, circ(c, sx * 4.5 + 0.6, cy + 0.6, 1.5), 0.85); cel(c, circ(c, sx * 4.5, cy, 0.9), ORANGE, null, null, 0.55); }
+      // fender cap
+      cel(c, rr(c, -4.8, cy - 7.4, 9.6, 2.8, 1.3), SHELL, SHELL_SH, rr(c, -4.8, cy - 5.9, 9.6, 1.4, 0.6), 1);
+      c.fillStyle = ORANGE; c.fillRect(-3.2, cy - 7, 6.4, 0.75);
     }
   };
 
   const treads = (layer: 'back' | 'front') => {
+    const off = walk * 2.3;
     if (side) {
       if (layer === 'back') return;
-      const off = (walk * 2.2) % 2.6;
-      cel(c, rr(c, -11, -7, 22, 7, 3.4), DARK, DARK_SH, rr(c, -11, -3, 22, 4, 2), 1.2);
-      // lugs running along the belt
-      c.fillStyle = '#5c6873';
-      for (let i = -1; i < 9; i++) { const lx = -10 + i * 2.6 + off; if (lx > -10.5 && lx < 9.8) { c.fillRect(lx, -7, 1.1, 1.1); c.fillRect(-lx - 1.1, -1.2, 1.1, 1.1); } }
-      for (const wx of [-6.6, 0, 6.6]) {
-        cel(c, circ(c, wx, -3.5, 2), METAL, null, null, 0.8);
-        c.strokeStyle = OL; c.lineWidth = 0.6; const a = walk * 1.6;
-        c.beginPath(); c.moveTo(wx + Math.cos(a) * 1.8, -3.5 + Math.sin(a) * 1.8); c.lineTo(wx - Math.cos(a) * 1.8, -3.5 - Math.sin(a) * 1.8); c.stroke();
+      const x0 = -12.5, w = 25, h = 8.6, y0 = -h;
+      // track loop
+      cel(c, rr(c, x0, y0, w, h, h / 2), '#323b44', '#1e252c', rr(c, x0, y0 + h * 0.5, w, h * 0.5, 2), 1.25);
+      // link plates on top (moving back) and bottom (moving forward)
+      c.save(); rrect(c, x0 - 1, y0 - 1.4, w + 2, h + 2.8, h / 2 + 1); c.clip();
+      for (let i = 0; i < 12; i++) {
+        const tx = x0 + 1 + ((i * 2.2 - off * 1.0) % (w - 2) + (w - 2)) % (w - 2);
+        rrect(c, tx, y0 - 0.7, 1.6, 1.5, 0.4); c.fillStyle = '#56626d'; c.fill(); c.strokeStyle = OL; c.lineWidth = 0.5; c.stroke();
+        const bx = x0 + 1 + ((i * 2.2 + off) % (w - 2) + (w - 2)) % (w - 2);
+        rrect(c, bx, -0.8, 1.6, 1.5, 0.4); c.fillStyle = '#4a5560'; c.fill(); c.stroke();
       }
-      cel(c, rr(c, -8.5, -8.3, 17, 2.4, 1), ORANGE, ORANGE_SH, rr(c, -8.5, -7.2, 17, 1.3, 0.6), 1);
+      c.restore();
+      // sprockets at both ends + road wheels
+      for (const wx of [x0 + h / 2, x0 + w - h / 2]) {
+        cel(c, circ(c, wx, y0 + h / 2, 3), METAL, METAL_SH, circ(c, wx + 0.9, y0 + h / 2 + 0.9, 2.5), 0.9);
+        c.fillStyle = OL;
+        for (let i = 0; i < 6; i++) { const a = off * 0.9 + i * 1.047; c.beginPath(); c.arc(wx + Math.cos(a) * 2.1, y0 + h / 2 + Math.sin(a) * 2.1, 0.45, 0, 6.28); c.fill(); }
+        cel(c, circ(c, wx, y0 + h / 2, 1.1), ORANGE, null, null, 0.6);
+      }
+      for (const wx of [-3, 3]) { cel(c, circ(c, wx, y0 + h / 2 + 0.6, 2.1), DARK, DARK_SH, circ(c, wx + 0.6, y0 + h / 2 + 1.2, 1.7), 0.85); bolt(c, wx, y0 + h / 2 + 0.6, 0.55); }
+      // armoured side skirt over the upper run
+      cel(c, () => { c.beginPath(); c.moveTo(x0 + 2.2, y0 - 1.4); c.lineTo(x0 + w - 2.2, y0 - 1.4); c.lineTo(x0 + w - 0.4, y0 + 2.6); c.lineTo(x0 + 0.4, y0 + 2.6); c.closePath(); }, ORANGE, ORANGE_SH, () => { c.fillRect(x0, y0 + 1.2, w, 2); }, 1);
+      c.fillStyle = 'rgba(255,255,255,0.4)'; c.fillRect(x0 + 3, y0 - 0.9, w - 6, 0.6);
+      for (let i = 0; i < 5; i++) bolt(c, x0 + 3.4 + i * (w - 6.8) / 4, y0 + 0.9, 0.4);
     } else {
       if (layer === 'back') {
-        cel(c, rr(c, -5.2, -5.6, 10.4, 3, 1), METAL_SH, null, null, 1);
+        seg(c, -6, -5.2, 6, -5.2, 2.4, METAL_SH, DARK, 0.9);
         return;
       }
-      for (const cx of [-7, 7]) {
-        cel(c, rr(c, cx - 2.8, -7, 5.6, 7, 2), DARK, DARK_SH, rr(c, cx + 0.6, -7, 2.2, 7, 1), 1.15);
-        c.fillStyle = '#5c6873';
-        for (let i = 0; i < 3; i++) { const ty = -6.4 + ((walk * 1.8 + i * 2.2) % 6.4); c.fillRect(cx - 2, ty, 4, 0.8); }
-        cel(c, rr(c, cx - 3.2, -8, 6.4, 2, 0.8), ORANGE, null, null, 0.9);
+      for (const cx of [-7.4, 7.4]) {
+        cel(c, rr(c, cx - 3.2, -8.2, 6.4, 8.2, 2.6), '#323b44', '#1e252c', rr(c, cx + 0.8, -8.2, 2.4, 8.2, 1.2), 1.2);
+        c.save(); rrect(c, cx - 3.2, -8.2, 6.4, 8.2, 2.6); c.clip();
+        for (let i = 0; i < 5; i++) {
+          const ty = -9 + ((off * 1.6 + i * 2) % 10);
+          rrect(c, cx - 2.6, ty, 5.2, 1.1, 0.4); c.fillStyle = '#56626d'; c.fill(); c.strokeStyle = OL; c.lineWidth = 0.45; c.stroke();
+        }
+        c.restore();
+        rrect(c, cx - 3.2, -8.2, 6.4, 8.2, 2.6); c.strokeStyle = OL; c.lineWidth = 1.2; c.stroke();
+        cel(c, rr(c, cx - 3.8, -9.8, 7.6, 3, 1.2), ORANGE, ORANGE_SH, rr(c, cx - 3.8, -8.3, 7.6, 1.5, 0.6), 1);
+        bolt(c, cx - 2, -8.4, 0.38); bolt(c, cx + 2, -8.4, 0.38);
       }
     }
   };
 
   const legs = (layer: 'back' | 'front') => {
-    const lift = (ph: number) => (o.moving ? Math.max(0, Math.sin(walk * 1.1 + ph)) * 2.6 : 0);
     const leg = (hx: number, hy: number, fx: number, fy: number, ph: number, far: boolean) => {
-      const l = lift(ph);
-      const kx = hx + (fx - hx) * 0.62, ky = Math.min(hy, fy) - 4.2 - l * 0.6;
-      tube(c, [hx, hy, kx, ky, fx, fy - l], far ? 1.5 : 1.8, far ? METAL_SH : METAL);
-      cel(c, circ(c, kx, ky, far ? 1 : 1.2), far ? TEAL_SH : TEAL, null, null, 0.7);
-      cel(c, circ(c, fx, fy - l - 0.2, far ? 0.9 : 1.1), far ? DARK_SH : DARK, null, null, 0.7);
+      const p = walk * 1.15 + ph;
+      const lift = o.moving ? Math.max(0, Math.sin(p)) * 3 : 0;
+      // planted feet slide back under the body, lifted ones swing forward
+      const slide = o.moving && side ? Math.cos(p) * 1.5 : 0;
+      const fX = fx + slide, fY = fy - lift;
+      const kx = hx + (fX - hx) * 1.1, ky = Math.min(hy, fY) - 6.4 - lift * 0.4;
+      const k1 = far ? 0.82 : 1;
+      // armoured femur with an orange stripe, knee, tapered shin, claw foot
+      seg(c, hx, hy, kx, ky, 3.6 * k1, far ? SHELL_SH : SHELL, far ? '#a8916f' : SHELL_SH, 1);
+      if (!far) { c.strokeStyle = ORANGE; c.lineWidth = 0.9; c.lineCap = 'round'; c.beginPath(); c.moveTo(hx + (kx - hx) * 0.3, hy + (ky - hy) * 0.3 + 0.6); c.lineTo(hx + (kx - hx) * 0.75, hy + (ky - hy) * 0.75 + 0.6); c.stroke(); }
+      taper(c, kx, ky, fX, fY - 0.8, 3 * k1, 1.2 * k1, far ? METAL_SH : METAL, far ? DARK : METAL_SH);
+      joint(c, kx, ky, 1.9 * k1, far ? DARK_SH : DARK);
+      cel(c, () => { c.beginPath(); c.moveTo(fX - 1.4 * k1, fY - 1.6); c.lineTo(fX + 1.4 * k1, fY - 1.6); c.lineTo(fX, fY + 0.6); c.closePath(); }, far ? DARK_SH : ORANGE, far ? null : ORANGE_SH, () => { c.fillRect(fX, fY - 2, 2, 3); }, 0.8);
     };
-    const hy = podY + 1.5;
+    const hy = podY + 1.2;
     if (side) {
-      if (layer === 'back') { leg(-2, hy - 1, -8, -1.2, 0, true); leg(1, hy - 1, 2, -1.2, Math.PI, true); leg(3.5, hy - 1, 10, -1.2, 0, true); }
-      else { leg(-3, hy, -10, 0, Math.PI, false); leg(0, hy, -1, 0.4, 0, false); leg(3, hy, 8.5, 0, Math.PI, false); }
+      if (layer === 'back') { leg(-3, hy - 1.2, -9.5, -1.4, 0, true); leg(0.5, hy - 1.2, 1.5, -1.4, Math.PI, true); leg(3.5, hy - 1.2, 11, -1.4, 0, true); }
+      else { leg(-3.5, hy, -11.5, 0, Math.PI, false); leg(0, hy, -0.5, 0.5, 0, false); leg(3.2, hy, 9.5, 0, Math.PI, false); }
     } else {
-      if (layer === 'back') { leg(-4, hy - 1, -12, -2, Math.PI, true); leg(4, hy - 1, 12, -2, 0, true); }
+      if (layer === 'back') { leg(-4, hy - 1, -12.5, -2.2, Math.PI, true); leg(4, hy - 1, 12.5, -2.2, 0, true); }
       else {
-        leg(-4.5, hy, -14.5, -0.3, 0, false); leg(4.5, hy, 14.5, -0.3, Math.PI, false);
-        leg(-3.5, hy + 0.5, -9.5, 1.6, Math.PI, false); leg(3.5, hy + 0.5, 9.5, 1.6, 0, false);
+        leg(-5, hy, -15.5, -0.4, 0, false); leg(5, hy, 15.5, -0.4, Math.PI, false);
+        leg(-3.6, hy + 0.6, -9.8, 1.8, Math.PI, false); leg(3.6, hy + 0.6, 9.8, 1.8, 0, false);
       }
+      // hip ring under the pod
+      cel(c, rr(c, -6, hy - 1.6, 12, 2.6, 1.2), DARK, DARK_SH, rr(c, -6, hy - 0.4, 12, 1.4, 0.6), 0.9);
     }
   };
 
   const hoverUnit = () => {
-    const jets = side ? [-5, 5] : [-6.5, 6.5];
-    // thrust cones
+    const jets = side ? [-6, 6] : [-9.4, 9.4];
+    // thrust plumes
     c.save(); c.globalCompositeOperation = 'lighter';
     for (const jx of jets) {
-      const fl = 0.75 + Math.sin(time * 23 + jx) * 0.12 + (o.moving ? 0.2 : 0);
-      c.fillStyle = `rgba(90,240,255,${0.32 * fl})`;
-      c.beginPath(); c.moveTo(jx - 1.6, podY + 3.2); c.lineTo(jx + 1.6, podY + 3.2); c.lineTo(jx + 3.2, -0.6); c.lineTo(jx - 3.2, -0.6); c.closePath(); c.fill();
-      c.fillStyle = `rgba(220,255,255,${0.7 * fl})`; ellipse(c, jx, podY + 4.2, 1.2, 1.9 * fl); c.fill();
+      const fl = 0.75 + Math.sin(time * 23 + jx) * 0.12 + (o.moving ? 0.25 : 0);
+      c.fillStyle = rad(c, jx, podY + 6, 0, -podY - 4, [[0, `rgba(160,250,255,${0.55 * fl})`], [1, 'rgba(80,220,255,0)']]);
+      c.beginPath(); c.moveTo(jx - 1.7, podY + 3.6); c.lineTo(jx + 1.7, podY + 3.6); c.lineTo(jx + 3.2, -0.4); c.lineTo(jx - 3.2, -0.4); c.closePath(); c.fill();
+      c.fillStyle = `rgba(235,255,255,${0.85 * fl})`; ellipse(c, jx, podY + 4.6, 1.2, 1.4 + fl * 0.8); c.fill();
     }
     c.restore();
-    for (const jx of jets) cel(c, rr(c, jx - 2, podY + 0.4, 4, 3.4, 1.2), METAL, METAL_SH, rr(c, jx + 0.4, podY + 0.4, 2, 3.4, 0.8), 1);
-    cel(c, ell(c, 0, podY + 0.6, side ? 9 : 10, 2.6), DARK, null, null, 1.1);
-    for (let i = 0; i < 3; i++) {
-      const lx = (i - 1) * (side ? 4.5 : 5.5);
-      c.fillStyle = Math.sin(time * 6 - i) > 0 ? GLOW : '#1f8f99'; c.beginPath(); c.arc(lx, podY + 1.1, 0.75, 0, 6.28); c.fill();
+    // central skirt with running lights
+    cel(c, ell(c, 0, podY + 0.8, side ? 9.4 : 10.6, 2.8), DARK, DARK_SH, ell(c, 1.5, podY + 1.8, side ? 9 : 10, 2), 1.1);
+    for (let i = 0; i < 5; i++) {
+      const lx = (i - 2) * (side ? 3.3 : 3.8);
+      c.fillStyle = Math.sin(time * 6 - i * 0.9) > 0.2 ? GLOW : '#1f7f88'; c.beginPath(); c.arc(lx, podY + 1.5, 0.6, 0, 6.28); c.fill();
+    }
+    // sleek thruster nacelles on short pylons
+    for (const jx of jets) {
+      const sgn = Math.sign(jx);
+      seg(c, sgn * 3.5, podY - 1.6, jx, podY + 0.4, 1.6, DARK, DARK_SH, 0.8);
+      const nac = () => { c.beginPath(); c.ellipse(jx, podY + 1.2, 3.3, 2.4, 0, 0, 6.28); };
+      cel(c, nac, SHELL, SHELL_SH, () => { c.beginPath(); c.ellipse(jx + 0.9, podY + 2.3, 3.2, 2, 0, 0, 6.28); }, 1.05);
+      c.save(); nac(); c.clip(); c.fillStyle = ORANGE; c.fillRect(jx + sgn * 1.4 - (sgn > 0 ? 0 : 2.2), podY - 2, 2.2, 7); c.restore();
+      nac(); c.strokeStyle = OL; c.lineWidth = 1.05; c.stroke();
+      c.fillStyle = 'rgba(255,255,255,0.75)'; ellipse(c, jx - 1, podY + 0.1, 1.3, 0.6); c.fill();
+      cel(c, ell(c, jx, podY + 3.4, 2, 0.85), DARK_SH, null, null, 0.8);
+      c.fillStyle = GLOW; ellipse(c, jx, podY + 3.5, 1.2, 0.45); c.fill();
     }
   };
 
@@ -321,50 +424,85 @@ export function drawWorker(c: C, x: number, y: number, time: number, o: WorkerPo
 
   // ------------------------------------------------------------------ sensor (top)
   const sensor = () => {
-    const mx = side ? -2 : 0, my = top + 0.6;
+    const mx = side ? -2 : 0, my = top + 0.8;
     const bulbCol = mood === 'worried' ? '#ff5a4f' : mood === 'happy' || mood === 'focus' ? '#ffe45c' : mood === 'sleepy' ? '#b69cff' : '#7dff8a';
+    // mount plate on the dome
+    const plate = () => {
+      cel(c, rr(c, mx - 3.4, my - 1.6, 6.8, 2.6, 1.3), DARK, DARK_SH, rr(c, mx - 3.4, my - 0.4, 6.8, 1.4, 0.6), 0.95);
+      bolt(c, mx - 2.2, my - 0.3, 0.35); bolt(c, mx + 2.2, my - 0.3, 0.35);
+    };
     if (lo.sensor === 'radar') {
-      tube(c, [mx, my, mx, my - 4.2], 1.4, METAL);
-      const a = time * 2.4, cs = Math.cos(a), sn = Math.sin(a);
-      c.save(); c.translate(mx, my - 5.4);
-      const w = 5.4 * Math.max(0.18, Math.abs(cs));
+      plate();
+      seg(c, mx, my - 1.2, mx, my - 4.6, 1.7, METAL, METAL_SH, 0.85);
+      joint(c, mx, my - 4.8, 1.3, TEAL);
+      const a = Math.sin(time * 1.3) * 1.15, cs = Math.cos(a), sn = 1;
+      c.save(); c.translate(mx, my - 7.2);
+      const w = 6.2 * Math.max(0.3, Math.abs(cs)), hh = 3.9;
       const front = sn > 0;
-      // dish (an ellipse seen edge-on as it spins)
-      cel(c, () => { c.beginPath(); c.ellipse(0, 0, w, 3.4, 0, 0, 6.28); }, front ? SHELL : SHELL_SH, front ? SHELL_SH : null, front ? () => { c.beginPath(); c.ellipse(w * 0.4, 0.6, w * 0.8, 3, 0, 0, 6.28); } : null, 1);
-      c.strokeStyle = ORANGE; c.lineWidth = 0.8; c.beginPath(); c.ellipse(0, 0, Math.max(0.2, w - 0.8), 2.6, 0, 0, 6.28); c.stroke();
-      tube(c, [0, 0, cs * 2.6, -2.2], 0.8, METAL_SH);
-      c.fillStyle = Math.sin(time * 7) > 0 ? '#ff5a4f' : '#ffe45c'; c.beginPath(); c.arc(cs * 2.6, -2.4, 0.7, 0, 6.28); c.fill();
+      if (front) {
+        // bowl facing us: rim, deep inner cone, feed horn
+        cel(c, () => { c.beginPath(); c.ellipse(0, 0, w, hh, 0, 0, 6.28); }, SHELL, null, null, 1.1);
+        c.fillStyle = rad(c, -w * 0.2, -0.6, 0.2, w, [[0, '#9fb0bd'], [0.7, '#56656f'], [1, '#3a4650']]);
+        c.beginPath(); c.ellipse(0, 0.3, Math.max(0.2, w - 1.1), hh - 1, 0, 0, 6.28); c.fill();
+        c.strokeStyle = 'rgba(42,26,16,0.4)'; c.lineWidth = 0.5; c.stroke();
+        c.strokeStyle = ORANGE; c.lineWidth = 0.7; c.beginPath(); c.ellipse(0, 0, Math.max(0.2, w - 0.45), hh - 0.45, 0, 0, 6.28); c.stroke();
+        const fx = Math.sin(a) * 1.6;
+        tube(c, [0, 0.3, fx, -3.2], 0.7, METAL);
+        cel(c, circ(c, fx, -3.4, 0.95), ORANGE, null, null, 0.6);
+        c.fillStyle = Math.sin(time * 7) > 0 ? '#ff5a4f' : '#ffe45c'; c.beginPath(); c.arc(fx, -3.4, 0.4, 0, 6.28); c.fill();
+      } else {
+        // back of the dish with stiffening ribs
+        cel(c, () => { c.beginPath(); c.ellipse(0, 0, w, hh, 0, 0, 6.28); }, METAL, METAL_SH, () => { c.beginPath(); c.ellipse(w * 0.35, 0.8, w, hh, 0, 0, 6.28); }, 1.1);
+        c.strokeStyle = 'rgba(42,26,16,0.45)'; c.lineWidth = 0.5;
+        for (const t of [-0.5, 0, 0.5]) { c.beginPath(); c.moveTo(t * w, -hh * 0.85); c.lineTo(t * w * 0.6, hh * 0.85); c.stroke(); }
+        cel(c, circ(c, 0, 0, 1.1), DARK, null, null, 0.6);
+      }
       c.restore();
     } else if (lo.sensor === 'scanner') {
-      tube(c, [mx, my, mx, my - 3.4], 1.6, METAL);
-      const py = my - 6;
-      // sweeping scan beam
+      plate();
+      seg(c, mx, my - 1.2, mx, my - 3.6, 1.8, METAL, METAL_SH, 0.85);
+      const py = my - 7;
       const sweep = Math.sin(time * 1.8);
       if (!back) {
         c.save(); c.globalCompositeOperation = 'lighter';
-        const bx = mx + (side ? 2 : sweep * 3), ang = side ? 0.35 + sweep * 0.35 : Math.PI / 2 + sweep * 0.6;
+        const bx = mx + (side ? 2.4 : sweep * 2.5), ang = side ? 0.35 + sweep * 0.35 : Math.PI / 2 + sweep * 0.6;
         c.translate(bx, py); c.rotate(side ? ang : ang - Math.PI / 2);
-        c.fillStyle = 'rgba(120,255,240,0.16)';
-        c.beginPath(); c.moveTo(0, 0); c.lineTo(22, -5); c.lineTo(22, 5); c.closePath(); c.fill();
+        c.fillStyle = rad(c, 0, 0, 0, 24, [[0, 'rgba(140,255,240,0.32)'], [1, 'rgba(120,255,240,0)']]);
+        c.beginPath(); c.moveTo(0, 0); c.lineTo(24, -6); c.lineTo(24, 6); c.closePath(); c.fill();
         c.restore();
       }
-      c.save(); c.translate(mx, py); c.rotate(Math.sin(time * 1.2) * 0.15);
-      cel(c, () => { c.beginPath(); c.moveTo(0, -4.2); c.lineTo(3.8, 1.8); c.lineTo(-3.8, 1.8); c.closePath(); }, '#7ef0e6', '#2bb5a8', () => { c.beginPath(); c.moveTo(0, -4.2); c.lineTo(3.8, 1.8); c.lineTo(0.4, 1.8); c.closePath(); }, 1);
-      c.fillStyle = 'rgba(255,255,255,0.75)'; c.beginPath(); c.moveTo(-0.6, -2.6); c.lineTo(-2, 0.6); c.lineTo(-1.2, 0.6); c.closePath(); c.fill();
-      glow(c, 0, -0.2, 4.5, '#6ff6ff', 0.35);
+      // hex collar + faceted prism
+      cel(c, () => { c.beginPath(); for (let i = 0; i < 6; i++) { const a = i * 1.047 + 0.52; c.lineTo(mx + Math.cos(a) * 2.6, py + 3 + Math.sin(a) * 1.1); } c.closePath(); }, DARK, null, null, 0.85);
+      c.save(); c.translate(mx, py); c.rotate(Math.sin(time * 1.2) * 0.12);
+      glow(c, 0, -0.5, 6, '#6ff6ff', 0.4);
+      const T = -5.2, B = 2.4;
+      c.lineJoin = 'round';
+      c.beginPath(); c.moveTo(0, T); c.lineTo(3.6, -0.6); c.lineTo(2, B); c.lineTo(-2, B); c.lineTo(-3.6, -0.6); c.closePath();
+      c.fillStyle = '#7ef0e6'; c.fill();
+      c.fillStyle = '#c4fffa'; c.beginPath(); c.moveTo(0, T); c.lineTo(-3.6, -0.6); c.lineTo(-0.6, 0.4); c.closePath(); c.fill();
+      c.fillStyle = '#3cc8bb'; c.beginPath(); c.moveTo(0, T); c.lineTo(3.6, -0.6); c.lineTo(2, B); c.lineTo(0.6, 0.4); c.closePath(); c.fill();
+      c.fillStyle = '#239d93'; c.beginPath(); c.moveTo(-0.6, 0.4); c.lineTo(0.6, 0.4); c.lineTo(2, B); c.lineTo(-2, B); c.closePath(); c.fill();
+      c.strokeStyle = 'rgba(42,26,16,0.35)'; c.lineWidth = 0.45;
+      c.beginPath(); c.moveTo(0, T); c.lineTo(-0.6, 0.4); c.lineTo(0.6, 0.4); c.lineTo(0, T); c.stroke();
+      c.beginPath(); c.moveTo(0, T); c.lineTo(3.6, -0.6); c.lineTo(2, B); c.lineTo(-2, B); c.lineTo(-3.6, -0.6); c.closePath();
+      c.strokeStyle = OL; c.lineWidth = 1; c.stroke();
+      c.fillStyle = '#fff'; c.beginPath(); c.arc(-1.3, -2.2, 0.45, 0, 6.28); c.fill();
       c.restore();
     } else {
-      // springy antenna with a mood bulb
+      plate();
+      // two-stage mast with a collar, then a spring tip and a glass bulb in a socket
       const sway = Math.sin(time * 3.1) * 0.9 + (o.moving ? (side ? -1.6 : -Math.cos(walk) * 1.2) : 0);
-      c.strokeStyle = OL; c.lineWidth = 1.9; c.lineCap = 'round';
-      c.beginPath(); c.moveTo(mx, my); c.quadraticCurveTo(mx, my - 3.5, mx + sway, my - 6.4); c.stroke();
-      c.strokeStyle = METAL; c.lineWidth = 0.9; c.stroke();
-      glow(c, mx + sway, my - 7.4, 4.8, bulbCol, 0.55);
-      cel(c, circ(c, mx + sway, my - 7.4, 1.9), bulbCol, shade(bulbCol, -0.25), circ(c, mx + sway + 0.8, my - 6.6, 1.5), 0.9);
-      c.fillStyle = 'rgba(255,255,255,0.85)'; c.beginPath(); c.arc(mx + sway - 0.6, my - 8, 0.55, 0, 6.28); c.fill();
+      seg(c, mx, my - 1.2, mx, my - 4, 1.7, METAL, METAL_SH, 0.85);
+      cel(c, rr(c, mx - 1.5, my - 4.6, 3, 1.3, 0.5), TEAL, null, null, 0.7);
+      const tx = mx + sway, ty = my - 8.6;
+      c.strokeStyle = OL; c.lineWidth = 1.7; c.lineCap = 'round';
+      c.beginPath(); c.moveTo(mx, my - 4.6); c.quadraticCurveTo(mx, my - 6.6, tx, ty + 1.6); c.stroke();
+      c.strokeStyle = '#e6edf2'; c.lineWidth = 0.8; c.stroke();
+      glow(c, tx, ty - 0.6, 5.2, bulbCol, 0.55);
+      cel(c, rr(c, tx - 1.2, ty + 0.4, 2.4, 1.6, 0.5), METAL, METAL_SH, null, 0.7);
+      cel(c, circ(c, tx, ty - 0.8, 2.1), bulbCol, shade(bulbCol, -0.25), circ(c, tx + 0.9, ty + 0.1, 1.7), 0.95);
+      c.fillStyle = 'rgba(255,255,255,0.9)'; c.beginPath(); c.arc(tx - 0.7, ty - 1.6, 0.6, 0, 6.28); c.fill();
     }
-    // base collar
-    cel(c, rr(c, mx - 2.6, my - 1.3, 5.2, 2.2, 1), TEAL, TEAL_SH, rr(c, mx + 0.6, my - 1.3, 2, 2.2, 0.8), 0.9);
   };
 
   // ------------------------------------------------------------------ tank (back-mounted)
@@ -373,62 +511,88 @@ export function drawWorker(c: C, x: number, y: number, time: number, o: WorkerPo
     const t = lo.tank;
     let cx: number, cy: number;
     if (view === 'peek') { cx = 4.2; cy = top + 1; }
-    else if (view === 'side') { cx = -PW / 2 - 2.2; cy = top + PH * 0.5; }
+    else if (view === 'side') { cx = -PW / 2 - 2.4; cy = top + PH * 0.5; }
     else { cx = 0; cy = top + PH * 0.42; }
     c.save(); c.translate(cx, cy); c.scale(tS, tS);
     if (t === 'quantum') {
       const R = 6.4;
-      cel(c, rr(c, -4.6, R - 1.6, 9.2, 2.8, 1.2), TEAL, TEAL_SH, null, 1);
+      // cradle: base plate and back bracket
+      cel(c, rr(c, -5, R - 1.4, 10, 2.8, 1.2), TEAL, TEAL_SH, rr(c, -5, R, 10, 1.4, 0.6), 1);
+      c.strokeStyle = OL; c.lineWidth = 2.6; c.beginPath(); c.arc(0, 0, R + 0.9, Math.PI * 0.2, Math.PI * 0.8, true); c.stroke();
+      c.strokeStyle = METAL_SH; c.lineWidth = 1.4; c.stroke();
       const pulse = (time % 3) < 0.4 ? 1 - (time % 3) / 0.4 : 0;
-      c.fillStyle = rad(c, -1.6, -1.8, 0.5, R, [[0, '#7b5cff'], [0.55, '#3b1f8f'], [1, '#160a3a']]);
+      c.fillStyle = rad(c, -1.6, -1.8, 0.5, R, [[0, '#8b6cff'], [0.55, '#3b1f8f'], [1, '#160a3a']]);
       c.beginPath(); c.arc(0, 0, R, 0, 6.28); c.fill();
       c.save(); c.beginPath(); c.arc(0, 0, R, 0, 6.28); c.clip();
       c.globalCompositeOperation = 'lighter';
       const sp = 0.3 + fill * 0.7;
-      c.strokeStyle = `rgba(120,255,240,${0.5 * sp})`; c.lineWidth = 1;
+      c.strokeStyle = `rgba(120,255,240,${0.55 * sp})`; c.lineWidth = 1;
       for (let i = 0; i < 3; i++) { const a = time * (1.4 + i * 0.5) + i * 2; c.beginPath(); c.ellipse(0, 0, 1.6 + i * 1.5, 0.9 + i * 0.9, a, 0, 4); c.stroke(); }
-      c.fillStyle = `rgba(255,255,255,${0.8 * sp})`;
-      for (let i = 0; i < 6; i++) { const a = time * 1.7 + i * 1.05, d = 1.2 + (i % 3) * 1.5; c.fillRect(Math.cos(a) * d - 0.35, Math.sin(a) * d * 0.7 - 0.35, 0.7, 0.7); }
+      c.fillStyle = `rgba(255,255,255,${0.85 * sp})`;
+      for (let i = 0; i < 7; i++) { const a = time * 1.7 + i * 0.9, d = 1.2 + (i % 3) * 1.5; c.fillRect(Math.cos(a) * d - 0.35, Math.sin(a) * d * 0.7 - 0.35, 0.7, 0.7); }
       if (pulse > 0) { c.fillStyle = `rgba(160,255,250,${pulse * 0.6})`; c.fillRect(-R, -R, R * 2, R * 2); }
       c.restore();
       c.beginPath(); c.arc(0, 0, R, 0, 6.28); c.strokeStyle = OL; c.lineWidth = 1.2; c.stroke();
-      c.fillStyle = 'rgba(255,255,255,0.45)'; ellipse(c, -2.4, -3, 1.8, 1, -0.6); c.fill();
+      // equator band + side clamps in front of the glass
+      c.save(); c.beginPath(); c.arc(0, 0, R + 0.1, 0, Math.PI); c.clip();
+      c.strokeStyle = OL; c.lineWidth = 2.4; ellipse(c, 0, 0, R, 1.6); c.stroke();
+      c.strokeStyle = METAL; c.lineWidth = 1.2; ellipse(c, 0, 0, R, 1.6); c.stroke();
+      c.restore();
+      for (const sx of [-1, 1]) { cel(c, rr(c, sx * R - 1.3, -1.6, 2.6, 3.2, 0.9), METAL, METAL_SH, null, 0.85); bolt(c, sx * R, 0, 0.4); }
+      cel(c, rr(c, -1.6, -R - 1.4, 3.2, 1.8, 0.7), TEAL, null, null, 0.8);
+      c.fillStyle = 'rgba(255,255,255,0.5)'; ellipse(c, -2.5, -3.1, 1.9, 1, -0.6); c.fill();
       glow(c, 0, 0, R + 3, '#8a7bff', 0.18 + pulse * 0.3);
     } else if (t === 'compactor') {
-      const w = 12, h = 11;
+      const w = 12.4, h = 11;
       const pump = (Math.sin(time * (2.5 + fill * 7)) * 0.5 + 0.5);
-      // piston on top
-      tube(c, [-2.5, -h / 2, -2.5, -h / 2 - 2.6 - pump * 2.2], 1.4, '#e6edf2');
-      cel(c, rr(c, -4.4, -h / 2 - 4.2 - pump * 2.2, 3.8, 1.8, 0.6), DARK, null, null, 0.8);
-      cel(c, rr(c, -w / 2, -h / 2, w, h, 2), DARK, DARK_SH, rr(c, w * 0.15, -h / 2, w, h, 1), 1.15);
-      // hazard stripe
-      c.save(); rrect(c, -w / 2 + 1, -h / 2 + 1.2, w - 2, 2.4, 0.6); c.clip();
-      c.fillStyle = '#ffcc33'; c.fillRect(-w / 2, -h / 2, w, 4);
-      c.fillStyle = OL; for (let i = -2; i < 6; i++) { c.beginPath(); c.moveTo(-w / 2 + i * 2.6, -h / 2 + 4); c.lineTo(-w / 2 + i * 2.6 + 1.3, -h / 2 + 4); c.lineTo(-w / 2 + i * 2.6 + 2.8, -h / 2); c.lineTo(-w / 2 + i * 2.6 + 1.5, -h / 2); c.closePath(); c.fill(); }
+      // hydraulic piston: housing + chrome rod + ram head
+      cel(c, rr(c, -4.6, -h / 2 - 3.2, 4, 3.6, 1), METAL, METAL_SH, rr(c, -2.4, -h / 2 - 3.2, 2, 3.6, 0.6), 0.9);
+      cel(c, rr(c, -3.15, -h / 2 - 5.2 - pump * 2, 1.1, 2.6 + pump * 2, 0.5), '#f1f6f9', null, null, 0.7);
+      cel(c, rr(c, -4.2, -h / 2 - 6.4 - pump * 2, 3.2, 1.5, 0.6), DARK, null, null, 0.8);
+      // body with top plate
+      cel(c, rr(c, -w / 2, -h / 2, w, h, 2.2), DARK, DARK_SH, rr(c, w * 0.15, -h / 2, w, h, 1), 1.15);
+      cel(c, rr(c, -w / 2 + 0.6, -h / 2 + 0.5, w - 1.2, 2, 0.8), METAL, null, null, 0.7);
+      // hazard plate
+      c.save(); rrect(c, -w / 2 + 1, -h / 2 + 3, w - 2, 2.6, 0.6); c.clip();
+      c.fillStyle = '#ffcc33'; c.fillRect(-w / 2, -h / 2 + 2, w, 5);
+      c.fillStyle = OL; for (let i = -2; i < 7; i++) { c.beginPath(); c.moveTo(-w / 2 + i * 2.6, -h / 2 + 6); c.lineTo(-w / 2 + i * 2.6 + 1.3, -h / 2 + 6); c.lineTo(-w / 2 + i * 2.6 + 3, -h / 2 + 2.5); c.lineTo(-w / 2 + i * 2.6 + 1.7, -h / 2 + 2.5); c.closePath(); c.fill(); }
       c.restore();
-      // gauge
-      cel(c, circ(c, 1.8, 1.5, 2.6), '#f6ecd9', null, null, 0.9);
-      c.strokeStyle = full ? '#e53935' : OL; c.lineWidth = 0.8;
+      rrect(c, -w / 2 + 1, -h / 2 + 3, w - 2, 2.6, 0.6); c.strokeStyle = OL; c.lineWidth = 0.6; c.stroke();
+      // gauge + lamp + vents
+      cel(c, circ(c, 2.4, 2.4, 2.3), SHELL, null, null, 0.85);
+      c.strokeStyle = full ? '#e53935' : OL; c.lineWidth = 0.7;
       const ga = Math.PI * (0.8 + fill * 1.4);
-      c.beginPath(); c.moveTo(1.8, 1.5); c.lineTo(1.8 + Math.cos(ga) * 2, 1.5 + Math.sin(ga) * 2); c.stroke();
-      c.fillStyle = full ? (Math.sin(time * 10) > 0 ? '#ff5a4f' : '#7a1f1a') : '#7dff8a'; c.beginPath(); c.arc(-3.4, 2.2, 0.9, 0, 6.28); c.fill();
+      c.beginPath(); c.moveTo(2.4, 2.4); c.lineTo(2.4 + Math.cos(ga) * 1.8, 2.4 + Math.sin(ga) * 1.8); c.stroke();
+      c.fillStyle = full ? (Math.sin(time * 10) > 0 ? '#ff5a4f' : '#7a1f1a') : '#7dff8a'; c.beginPath(); c.arc(-3.6, 1.4, 0.95, 0, 6.28); c.fill(); c.strokeStyle = OL; c.lineWidth = 0.5; c.stroke();
+      c.fillStyle = '#1a2026'; for (let i = 0; i < 3; i++) c.fillRect(-4.6, 3.2 + i * 1.1, 3.4, 0.55);
     } else {
-      const w = 10, h = 13;
-      cel(c, rr(c, -w / 2, -h / 2, w, h, 3.2), METAL, METAL_SH, rr(c, w * 0.18, -h / 2, w, h, 1.4), 1.15);
-      cel(c, rr(c, -w / 2 - 0.6, -h / 2 - 1.2, w + 1.2, 2.8, 1.2), TEAL, TEAL_SH, rr(c, w * 0.15, -h / 2 - 1.2, w, 2.8, 1), 1);
-      c.fillStyle = METAL_SH; c.fillRect(-w / 2 + 0.6, h / 2 - 3.4, w - 1.2, 0.9);
+      const w = 10.6, h = 13.4;
+      // canister body
+      cel(c, rr(c, -w / 2, -h / 2, w, h, 3.6), METAL, METAL_SH, rr(c, w * 0.18, -h / 2, w, h, 1.4), 1.15);
+      c.fillStyle = 'rgba(255,255,255,0.45)'; c.fillRect(-w / 2 + 1.2, -h / 2 + 2.4, 0.8, h - 4.8);
+      // bands with rivets
+      for (const by of [-h / 2 + 1.6, h / 2 - 3]) {
+        cel(c, rr(c, -w / 2 - 0.3, by, w + 0.6, 1.5, 0.6), DARK, null, null, 0.75);
+        for (let i = 0; i < 4; i++) bolt(c, -w / 2 + 1.5 + i * (w - 3) / 3, by + 0.75, 0.3);
+      }
+      // lid with valve wheel
+      cel(c, rr(c, -w / 2 + 0.6, -h / 2 - 1.8, w - 1.2, 2.4, 1.1), TEAL, TEAL_SH, rr(c, w * 0.15, -h / 2 - 1.8, w, 2.4, 1), 1);
+      seg(c, 2.2, -h / 2 - 1.9, 2.2, -h / 2 - 3.2, 0.9, METAL, METAL_SH, 0.6);
+      cel(c, ell(c, 2.2, -h / 2 - 3.4, 1.6, 0.75), METAL_SH, null, null, 0.8);
+      bolt(c, 2.2, -h / 2 - 3.4, 0.35);
       // window with the load
-      const wx = -2.2, wy = -h / 2 + 2.6, ww = 4.4, wh = h - 6;
-      cel(c, rr(c, wx, wy, ww, wh, 1.4), '#1d2a30', null, null, 0.9);
+      const wx = -2.4, wy = -h / 2 + 3.6, ww = 4.8, wh = h - 7.6;
+      cel(c, rr(c, wx - 0.6, wy - 0.6, ww + 1.2, wh + 1.2, 1.8), DARK, null, null, 0.8);
+      cel(c, rr(c, wx, wy, ww, wh, 1.4), '#1d2a30', null, null, 0.6);
       if (fill > 0.02) {
         c.save(); rrect(c, wx, wy, ww, wh, 1.4); c.clip();
         const tp = wy + wh * (1 - fill);
         c.fillStyle = '#5b4a7a'; c.fillRect(wx, tp, ww, wh);
-        for (let i = 0; i < 7; i++) { c.fillStyle = MAT_COLS[i % 6]; c.fillRect(wx + ((i * 37) % 10) / 10 * ww - 0.6, tp + ((i * 53) % 10) / 10 * (wy + wh - tp), 1.5, 1.2); }
+        for (let i = 0; i < 8; i++) { c.fillStyle = MAT_COLS[i % 6]; c.fillRect(wx + ((i * 37) % 10) / 10 * ww - 0.6, tp + ((i * 53) % 10) / 10 * (wy + wh - tp), 1.5, 1.2); }
         c.restore();
       }
-      c.fillStyle = 'rgba(255,255,255,0.35)'; c.fillRect(wx + 0.5, wy + 0.6, 0.7, wh - 1.2);
-      if (full) { c.fillStyle = Math.sin(time * 10) > 0 ? '#ff5a4f' : '#7a1f1a'; c.beginPath(); c.arc(w / 2 - 1.6, -h / 2 - 2.4, 1.1, 0, 6.28); c.fill(); c.strokeStyle = OL; c.lineWidth = 0.6; c.stroke(); }
+      c.fillStyle = 'rgba(255,255,255,0.4)'; c.fillRect(wx + 0.6, wy + 0.6, 0.7, wh - 1.2);
+      if (full) { c.fillStyle = Math.sin(time * 10) > 0 ? '#ff5a4f' : '#7a1f1a'; c.beginPath(); c.arc(-w / 2 + 2, -h / 2 - 2.4, 1.1, 0, 6.28); c.fill(); c.strokeStyle = OL; c.lineWidth = 0.6; c.stroke(); }
     }
     c.restore();
   };
@@ -438,18 +602,22 @@ export function drawWorker(c: C, x: number, y: number, time: number, o: WorkerPo
     const sway = o.moving ? Math.sin(walk) * 0.12 : Math.sin(time * 1.6) * 0.05;
     let sx: number, sy: number, a1: number, a2: number, a3: number;
     if (side) { sx = 2; sy = top + PH * 0.6; a1 = -0.85 - k * 0.5 + sway; a2 = -1.35 + k * 0.25; a3 = -0.95 + k * 0.35; }
-    else if (back) { sx = PW / 2 - 0.5; sy = top + PH * 0.52; a1 = -1.45 + k * 0.4 - sway; a2 = -0.55 + k * 0.4; a3 = -0.5 + k * 0.35; }
-    else { sx = -PW / 2 + 0.5; sy = top + PH * 0.52; a1 = 1.45 - k * 0.45 + sway; a2 = 0.55 - k * 0.45; a3 = 0.5 - k * 0.45; }
-    const L1 = 5.2, L2 = 4.4 + k * 1.8;
+    else if (back) { sx = PW / 2 - 0.5; sy = top + PH * 0.5; a1 = -1.05 + k * 0.5 - sway; a2 = -0.25 + k * 0.45; a3 = -0.15 + k * 0.3; }
+    else { sx = -PW / 2 + 0.5; sy = top + PH * 0.5; a1 = 1.05 - k * 0.5 + sway; a2 = 0.25 - k * 0.45; a3 = 0.15 - k * 0.3; }
+    const L1 = 5.6, L2 = 4.6 + k * 1.8;
     const ex = sx - Math.sin(a1) * L1, ey = sy + Math.cos(a1) * L1;
     const wx = ex - Math.sin(a2) * L2, wy = ey + Math.cos(a2) * L2;
-    tube(c, [sx, sy, ex, ey], 3, ORANGE);
-    c.strokeStyle = 'rgba(255,255,255,0.35)'; c.lineWidth = 0.7; c.beginPath(); c.moveTo(sx - 0.5, sy); c.lineTo(ex - 0.5, ey); c.stroke();
-    tube(c, [ex, ey, wx, wy], 2, METAL);
-    cel(c, circ(c, ex, ey, 1.6), METAL_SH, null, null, 0.8);
-    cel(c, circ(c, sx, sy, 2.5), TEAL, TEAL_SH, circ(c, sx + 0.9, sy + 0.9, 2), 1);
-    c.fillStyle = METAL; c.beginPath(); c.arc(sx, sy, 0.9, 0, 6.28); c.fill();
-    c.save(); c.translate(wx, wy); c.rotate(a3); c.scale(0.76, 0.76);
+    // upper arm with a hydraulic cylinder along it
+    seg(c, sx, sy, ex, ey, 3.8, ORANGE, ORANGE_SH, 1);
+    const ux = (ex - sx) / L1, uy = (ey - sy) / L1, px = -uy, py = ux;
+    const off = 2.3;
+    seg(c, sx + px * off + ux * 0.6, sy + py * off + uy * 0.6, sx + px * off + ux * 2.8, sy + py * off + uy * 2.8, 1.5, DARK, DARK_SH, 0.7);
+    tube(c, [sx + px * off + ux * 3, sy + py * off + uy * 3, ex + px * 1.2, ey + py * 1.2], 0.7, '#eef3f6');
+    // forearm + joints
+    seg(c, ex, ey, wx, wy, 2.9, METAL, METAL_SH, 0.95);
+    joint(c, ex, ey, 2.1, DARK);
+    joint(c, sx, sy, 3, TEAL);
+    c.save(); c.translate(wx, wy); c.rotate(a3); c.scale(0.95, 0.95);
     drawTool(c, o.tier, o.action, time, true);
     c.restore();
   };
@@ -502,101 +670,161 @@ export function drawTool(c: C, tier: number, act: number, time: number, side: bo
   const k = act > 0 ? Math.sin(act * Math.PI) : 0;
   c.save();
   c.lineJoin = 'round'; c.lineCap = 'round';
-  const collar = () => cel(c, rr(c, -2.6, -1.2, 5.2, 3, 1.1), DARK, null, null, 0.9);
+  // wrist collar shared by every attachment
+  const collar = () => { cel(c, rr(c, -2.8, -1.4, 5.6, 3.2, 1.2), DARK, DARK_SH, rr(c, -2.8, 0.2, 5.6, 1.6, 0.6), 0.95); bolt(c, -1.6, 0.2, 0.35); bolt(c, 1.6, 0.2, 0.35); };
   switch (tier) {
-    case 0: { // factory pincer
-      cel(c, rr(c, -1.1, 1, 2.2, 4, 0.8), METAL, null, null, 0.8);
+    case 0: { // factory pincer: two thick curved jaws with teeth
+      cel(c, rr(c, -3.2, 1.4, 6.4, 3.6, 1.6), METAL, METAL_SH, rr(c, -3.2, 3, 6.4, 2, 0.8), 0.95);
       collar();
-      const open = 0.15 + (1 - k) * 0.55;
+      const open = 0.12 + (1 - k) * 0.5;
       for (const s of [-1, 1]) {
-        c.save(); c.translate(0, 5); c.rotate(s * -open);
-        cel(c, () => { c.beginPath(); c.moveTo(s * 0.6, 0); c.quadraticCurveTo(s * 4.2, 3, s * 1.6, 8.4); c.lineTo(s * 0.4, 7.6); c.quadraticCurveTo(s * 2, 3.6, s * -0.6, 0.6); c.closePath(); }, TEAL, TEAL_SH, () => { c.fillRect(s > 0 ? 1.2 : -4, 0, 3, 9); }, 0.9);
+        c.save(); c.translate(s * 1.3, 4.6); c.rotate(s * -open);
+        const jaw = () => { c.beginPath(); c.moveTo(s * -0.8, -0.2); c.bezierCurveTo(s * 6, 0.6, s * 5.6, 8, s * 0.2, 10.4); c.lineTo(s * -1, 8.8); c.bezierCurveTo(s * 2.4, 6.6, s * 2.2, 3, s * -1.6, 2.2); c.closePath(); };
+        cel(c, jaw, TEAL, TEAL_SH, () => { c.beginPath(); c.ellipse(s * 3, 5, 2.2, 5, 0, 0, 6.28); }, 1);
+        c.fillStyle = 'rgba(255,255,255,0.5)'; c.beginPath(); c.ellipse(s * 1.6, 2.6, 0.5, 1.4, s * -0.5, 0, 6.28); c.fill();
+        // teeth on the inner edge
+        c.fillStyle = METAL; c.strokeStyle = OL; c.lineWidth = 0.45;
+        for (const ty of [3.6, 5.6]) { c.beginPath(); c.moveTo(s * 1.1, ty - 0.8); c.lineTo(s * -0.4, ty); c.lineTo(s * 1.1, ty + 0.8); c.closePath(); c.fill(); c.stroke(); }
         c.restore();
       }
-      cel(c, circ(c, 0, 5, 1.4), ORANGE, null, null, 0.8);
+      joint(c, 0, 3.4, 1.5, ORANGE);
       break;
     }
-    case 1: { // telescopic scoop
+    case 1: { // telescopic scoop: nested tubes + bucket with rim and teeth
       const ext = k * 5;
-      cel(c, rr(c, -1.7, 0, 3.4, 5.4, 1), METAL, METAL_SH, rr(c, 0.4, 0, 1.3, 5.4, 0.6), 0.9);
-      cel(c, rr(c, -1.3, 4.6, 2.6, 3.6 + ext * 0.5, 0.9), METAL, METAL_SH, rr(c, 0.3, 4.6, 1, 4 + ext, 0.5), 0.9);
-      const e = 8 + ext;
-      cel(c, rr(c, -0.95, e - 0.6, 1.9, 2.6 + ext * 0.5, 0.7), '#e6edf2', null, null, 0.8);
-      const b = e + 2 + ext * 0.5;
+      cel(c, rr(c, -2.3, 0, 4.6, 5.6, 1.2), METAL, METAL_SH, rr(c, 0.6, 0, 1.7, 5.6, 0.6), 0.95);
+      cel(c, rr(c, -2.6, 4.4, 5.2, 1.3, 0.5), DARK, null, null, 0.7);
+      cel(c, rr(c, -1.8, 5.6, 3.6, 3.4 + ext * 0.5, 1), '#c9d4dc', METAL_SH, rr(c, 0.5, 5.6, 1.3, 4 + ext, 0.5), 0.9);
+      cel(c, rr(c, -2.1, 8.4 + ext * 0.5, 4.2, 1.1, 0.4), DARK, null, null, 0.65);
+      cel(c, rr(c, -1.3, 9.4 + ext * 0.5, 2.6, 1.8 + ext * 0.5, 0.7), '#eef3f6', null, null, 0.8);
       collar();
-      cel(c, () => { c.beginPath(); c.moveTo(-3.8, b); c.lineTo(3.8, b); c.lineTo(3.2, b + 4.4); c.quadraticCurveTo(0, b + 6.6, -3.2, b + 4.4); c.closePath(); }, ORANGE, ORANGE_SH, () => { c.fillRect(0.6, b, 4, 7); }, 1);
-      c.fillStyle = DARK; c.fillRect(-3, b + 0.6, 6, 1);
+      const b = 11 + ext;
+      const bucket = () => { c.beginPath(); c.moveTo(-4.8, b); c.lineTo(4.8, b); c.lineTo(4.2, b + 4.8); c.quadraticCurveTo(0, b + 7.2, -4.2, b + 4.8); c.closePath(); };
+      cel(c, bucket, ORANGE, ORANGE_SH, () => { c.fillRect(1.2, b, 5, 8); }, 1.1);
+      c.fillStyle = 'rgba(255,255,255,0.45)'; c.fillRect(-3.6, b + 1.6, 0.7, 2.6);
+      // opening seen from above + thick rim
+      c.fillStyle = '#3a2416'; ellipse(c, 0, b + 0.5, 4.2, 1.1); c.fill();
+      cel(c, rr(c, -5.3, b - 0.9, 10.6, 1.8, 0.8), DARK, null, null, 0.9);
+      bolt(c, -3.8, b, 0.3); bolt(c, 3.8, b, 0.3);
+      // teeth along the lip
+      c.fillStyle = METAL; c.strokeStyle = OL; c.lineWidth = 0.5;
+      for (let i = 0; i < 4; i++) { const tx = -2.7 + i * 1.8; const ty = b + 5.6 - Math.abs(tx) * 0.25; c.beginPath(); c.moveTo(tx - 0.7, ty - 0.6); c.lineTo(tx + 0.7, ty - 0.6); c.lineTo(tx, ty + 1); c.closePath(); c.fill(); c.stroke(); }
       break;
     }
-    case 2: { // hydraulic claw
-      cel(c, rr(c, -2.1, 0, 4.2, 7, 1.3), ORANGE, ORANGE_SH, rr(c, 0.6, 0, 1.6, 7, 0.6), 1);
+    case 2: { // hydraulic claw: cylinder, chrome rod, hub and three jointed fingers
+      cel(c, rr(c, -2.7, 0, 5.4, 6.8, 1.7), ORANGE, ORANGE_SH, rr(c, 0.8, 0, 1.9, 6.8, 0.8), 1);
+      c.save(); rrect(c, -2.7, 4.2, 5.4, 1.5, 0.4); c.clip(); c.fillStyle = '#ffcc33'; c.fillRect(-3, 4, 6, 2); c.fillStyle = OL; for (let i = -1; i < 4; i++) c.fillRect(-2.6 + i * 1.6, 4, 0.7, 2); c.restore();
       collar();
-      const rod = 1.6 + k * 4;
-      cel(c, rr(c, -0.8, 6.6, 1.6, rod + 0.6, 0.6), '#eef3f6', null, null, 0.7);
+      const rod = 1.4 + k * 3.6;
+      cel(c, rr(c, -0.85, 6.4, 1.7, rod + 0.8, 0.6), '#f1f6f9', null, null, 0.7);
       const e = 7 + rod;
-      cel(c, circ(c, 0, e + 0.8, 2.2), DARK, DARK_SH, circ(c, 0.8, e + 1.6, 1.8), 0.9);
-      const open = (1 - k) * 0.7 + 0.15;
-      for (const s of [-1, 1]) tube(c, [s * 1, e + 2, s * (2.2 + open * 3), e + 5, s * (0.9 + open * 1.4), e + 8.4], 1.3, METAL);
-      tube(c, [0, e + 2.6, 0, e + 7.6], 1.1, METAL_SH);
-      for (const s of [-1, 1]) cel(c, circ(c, s * (0.9 + open * 1.4), e + 8.4, 0.85), ORANGE, null, null, 0.6);
+      const open = (1 - k) * 0.6 + 0.12;
+      const finger = (ang: number, len: number) => {
+        const bx = Math.sin(ang) * 2.2, by = e + 1 + Math.cos(ang) * 2.2;
+        const kx = bx + Math.sin(ang) * len, ky = by + Math.cos(ang) * len;
+        const curl = -Math.sign(ang || 0.0001) * (0.9 - open * 0.6);
+        const tipA = ang + curl;
+        const tx = kx + Math.sin(tipA) * (len * 0.9), ty = ky + Math.cos(tipA) * (len * 0.9);
+        seg(c, bx, by, kx, ky, 2.2, METAL, METAL_SH, 0.85);
+        taper(c, kx, ky, tx, ty, 2, 0.6, DARK, DARK_SH);
+        joint(c, kx, ky, 1, ORANGE);
+      };
+      finger(0, 2.6);
+      finger(-open - 0.25, 3.2); finger(open + 0.25, 3.2);
+      joint(c, 0, e + 1, 2.7, DARK);
       break;
     }
-    case 3: { // ionic vacuum nozzle
-      for (let i = 0; i < 4; i++) cel(c, ell(c, 0, 1.5 + i * 1.6, 2.2, 1), i % 2 ? DARK : '#56636f', null, null, 0.8);
+    case 3: { // ionic vacuum: corrugated hose + bell nozzle with a glowing ring
+      for (let i = 0; i < 5; i++) cel(c, rr(c, -2.6, 0.8 + i * 1.35, 5.2, 1.8, 0.9), i % 2 ? '#56636f' : '#3e4852', null, null, 0.75);
       collar();
-      cel(c, () => { c.beginPath(); c.moveTo(-1.9, 7); c.lineTo(1.9, 7); c.lineTo(4.8, 13); c.lineTo(-4.8, 13); c.closePath(); }, SHELL, SHELL_SH, () => { c.fillRect(1, 6, 5, 8); }, 1);
-      cel(c, rr(c, -2.2, 7.4, 4.4, 1.6, 0.6), ORANGE, null, null, 0.7);
-      cel(c, ell(c, 0, 13, 4.8, 1.5), SCREEN, null, null, 1);
+      const bell = () => { c.beginPath(); c.moveTo(-2.4, 7.4); c.lineTo(2.4, 7.4); c.quadraticCurveTo(3.4, 11, 6, 13.4); c.lineTo(-6, 13.4); c.quadraticCurveTo(-3.4, 11, -2.4, 7.4); c.closePath(); };
+      cel(c, bell, SHELL, SHELL_SH, () => { c.fillRect(1.2, 6, 6, 9); }, 1.1);
+      cel(c, rr(c, -2.8, 7.4, 5.6, 1.8, 0.7), ORANGE, ORANGE_SH, null, 0.8);
+      c.fillStyle = 'rgba(255,255,255,0.55)'; c.fillRect(-3.4, 10.2, 0.7, 2);
+      cel(c, ell(c, 0, 13.4, 6, 1.9), DARK, null, null, 1.1);
+      c.fillStyle = SCREEN; ellipse(c, 0, 13.5, 4.6, 1.3); c.fill();
       const p = 0.6 + Math.sin(time * 12) * 0.25 + k * 0.4;
       c.save(); c.globalCompositeOperation = 'lighter';
-      c.strokeStyle = `rgba(110,250,255,${0.8 * p})`; c.lineWidth = 0.9; ellipse(c, 0, 13, 4, 1.05); c.stroke();
-      c.fillStyle = `rgba(110,250,255,${0.25 * p})`; c.beginPath(); c.moveTo(-4.2, 13); c.lineTo(4.2, 13); c.lineTo(6.5, 19); c.lineTo(-6.5, 19); c.closePath(); c.fill();
+      c.strokeStyle = `rgba(110,250,255,${0.9 * p})`; c.lineWidth = 1; ellipse(c, 0, 13.4, 4.9, 1.45); c.stroke();
+      c.fillStyle = rad(c, 0, 13.4, 0, 9, [[0, `rgba(110,250,255,${0.35 * p})`], [1, 'rgba(110,250,255,0)']]);
+      c.beginPath(); c.moveTo(-4.6, 13.4); c.lineTo(4.6, 13.4); c.lineTo(7.5, 21); c.lineTo(-7.5, 21); c.closePath(); c.fill();
+      // particles drawn into the mouth
+      c.fillStyle = `rgba(200,255,255,${0.8 * p})`;
+      for (let i = 0; i < 4; i++) { const t = (time * 1.6 + i * 0.25) % 1; c.fillRect((i - 1.5) * 3.4 * (1 - t), 21 - t * 7.5, 0.9, 0.9); }
       c.restore();
       break;
     }
-    case 4: { // magnetic ring
-      cel(c, rr(c, -1, 0, 2, 6.5, 0.7), METAL, METAL_SH, rr(c, 0.2, 0, 0.8, 6.5, 0.4), 0.8);
+    case 4: { // magnetic horseshoe with field arcs
+      cel(c, rr(c, -1.3, 0, 2.6, 5.4, 0.8), METAL, METAL_SH, rr(c, 0.3, 0, 1, 5.4, 0.4), 0.85);
       collar();
-      const cy = 10.4, rx = 6, ry = 2.8;
+      const cy = 9.6, R = 4.6;
       const f = (time * 1.6) % 1;
       c.save(); c.globalCompositeOperation = 'lighter';
-      c.strokeStyle = `rgba(150,170,255,${0.55 * (1 - f)})`; c.lineWidth = 0.9; ellipse(c, 0, cy + 1 + f * 4, rx + f * 3, ry + f * 1.4); c.stroke();
-      c.restore();
-      c.strokeStyle = OL; c.lineWidth = 3.8; ellipse(c, 0, cy, rx, ry); c.stroke();
-      for (let i = 0; i < 8; i++) {
-        c.strokeStyle = i % 2 ? '#ef4444' : '#e5e7eb'; c.lineWidth = 2.2;
-        c.beginPath(); c.ellipse(0, cy, rx, ry, 0, i * 0.785 + time * 0.8, (i + 1) * 0.785 + time * 0.8); c.stroke();
+      for (let i = 0; i < 2; i++) {
+        const ff = (f + i * 0.5) % 1;
+        c.strokeStyle = `rgba(150,180,255,${0.6 * (1 - ff)})`; c.lineWidth = 0.9;
+        c.beginPath(); c.arc(0, cy + 5.4, R + ff * 4, 0.15 * Math.PI, 0.85 * Math.PI); c.stroke();
       }
-      tube(c, [0, 6.2, -4, cy - 1.4], 0.8, METAL_SH);
-      tube(c, [0, 6.2, 4, cy - 1.4], 0.8, METAL_SH);
+      c.restore();
+      const shoe = () => { c.beginPath(); c.arc(0, cy, R, Math.PI, Math.PI * 2); c.lineTo(R, cy + 4.2); c.moveTo(-R, cy + 4.2); c.lineTo(-R, cy); };
+      c.lineCap = 'butt';
+      shoe(); c.strokeStyle = OL; c.lineWidth = 5; c.stroke();
+      shoe(); c.strokeStyle = '#e23b3b'; c.lineWidth = 3.4; c.stroke();
+      c.strokeStyle = '#a21f1f'; c.lineWidth = 1.2; c.beginPath(); c.arc(0.4, cy + 0.6, R, Math.PI * 1.2, Math.PI * 1.9); c.stroke();
+      c.strokeStyle = 'rgba(255,255,255,0.55)'; c.lineWidth = 0.7; c.beginPath(); c.arc(-0.3, cy - 0.3, R, Math.PI * 1.1, Math.PI * 1.45); c.stroke();
+      c.lineCap = 'round';
+      for (const s of [-1, 1]) {
+        cel(c, rr(c, s * R - 2.1, cy + 3.6, 4.2, 3, 0.7), '#e9eef2', METAL_SH, rr(c, s * R + 0.3, cy + 3.6, 1.8, 3, 0.4), 0.95);
+        c.fillStyle = shade(s < 0 ? '#60a5fa' : '#e23b3b', 0, 0.85); c.fillRect(s * R - 1.6, cy + 5.6, 3.2, 0.7);
+      }
       break;
     }
-    case 5: { // spiral shredder
-      cel(c, rr(c, -4.2, 0, 8.4, 5, 1.6), ORANGE, ORANGE_SH, rr(c, 1.2, 0, 3, 5, 1), 1);
-      c.save(); rrect(c, -3.6, 1.4, 7.2, 1.8, 0.5); c.clip();
-      c.fillStyle = '#ffcc33'; c.fillRect(-4, 1, 8, 3); c.fillStyle = OL;
-      for (let i = -2; i < 4; i++) c.fillRect(-4 + i * 2.4 + 0.6, 1, 1, 3);
+    case 5: { // shredder: hazard housing + toothed drum
+      const hood = () => { c.beginPath(); c.moveTo(-5.2, 5.6); c.lineTo(-5.2, 2.2); c.quadraticCurveTo(-5.2, 0, -3, 0); c.lineTo(3, 0); c.quadraticCurveTo(5.2, 0, 5.2, 2.2); c.lineTo(5.2, 5.6); c.closePath(); };
+      cel(c, hood, ORANGE, ORANGE_SH, () => { c.fillRect(1.5, 0, 5, 6); }, 1.1);
+      c.save(); rrect(c, -4.4, 2.2, 8.8, 1.8, 0.5); c.clip();
+      c.fillStyle = '#ffcc33'; c.fillRect(-5, 2, 10, 2.4); c.fillStyle = OL;
+      for (let i = -2; i < 5; i++) { c.beginPath(); c.moveTo(-5 + i * 2.4, 4.2); c.lineTo(-4 + i * 2.4, 4.2); c.lineTo(-2.6 + i * 2.4, 2); c.lineTo(-3.6 + i * 2.4, 2); c.closePath(); c.fill(); }
       c.restore();
       collar();
-      cel(c, rr(c, -3.3, 4.6, 6.6, 8, 2.2), DARK, DARK_SH, rr(c, 1, 4.6, 2.3, 8, 1), 1);
-      c.save(); rrect(c, -3.3, 4.6, 6.6, 8, 2.2); c.clip();
-      c.strokeStyle = '#d7dde0'; c.lineWidth = 1;
-      const off = (time * 22) % 2.6;
-      for (let i = -1; i < 5; i++) { const yy = 4 + i * 2.6 + off; c.beginPath(); c.moveTo(-3.4, yy); c.lineTo(3.4, yy + 1.8); c.stroke(); }
+      // drum
+      const drum = rr(c, -4.6, 5, 9.2, 7, 3.2);
+      cel(c, drum, '#47525d', DARK, rr(c, 1.2, 5, 3.4, 7, 1.4), 1.1);
+      c.save(); rrect(c, -4.6, 5, 9.2, 7, 3.2); c.clip();
+      const off = (time * 14) % 2.8;
+      c.fillStyle = '#dfe5e9'; c.strokeStyle = OL; c.lineWidth = 0.45;
+      for (let r = -1; r < 4; r++) {
+        const yy = 5 + r * 2.8 + off;
+        for (let i = 0; i < 4; i++) { const tx = -3.6 + i * 2.4 + (r % 2 ? 1.2 : 0); c.beginPath(); c.moveTo(tx - 0.8, yy + 0.8); c.lineTo(tx + 0.8, yy + 0.8); c.lineTo(tx, yy - 0.6); c.closePath(); c.fill(); c.stroke(); }
+      }
       c.restore();
-      c.fillStyle = '#d7dde0';
-      for (let i = 0; i < 4; i++) { const tx = -2.6 + i * 1.75; c.beginPath(); c.moveTo(tx - 0.6, 12.4); c.lineTo(tx + 0.6, 12.4); c.lineTo(tx, 14); c.closePath(); c.fill(); }
+      for (const sx of [-1, 1]) joint(c, sx * 4.8, 8.5, 1.4, METAL_SH);
+      // teeth biting below
+      c.fillStyle = '#dfe5e9';
+      for (let i = 0; i < 4; i++) { const tx = -2.7 + i * 1.8; c.beginPath(); c.moveTo(tx - 0.8, 11.6); c.lineTo(tx + 0.8, 11.6); c.lineTo(tx, 13.4 + Math.sin(time * 20 + i) * 0.3); c.closePath(); c.fill(); c.strokeStyle = OL; c.lineWidth = 0.5; c.stroke(); }
       break;
     }
-    case 6: { // tractor-beam emitter
-      glow(c, 0, 9, 9 + k * 3, '#00e5ff', 0.45);
-      cel(c, () => { c.beginPath(); c.moveTo(-2.4, 0); c.lineTo(2.4, 0); c.lineTo(3.8, 7.4); c.lineTo(-3.8, 7.4); c.closePath(); }, DARK, DARK_SH, () => { c.fillRect(0.8, 0, 4, 8); }, 1);
-      for (const s of [-1, 1]) cel(c, () => { c.beginPath(); c.moveTo(s * 3, 2.4); c.lineTo(s * 5.6, 5.6); c.lineTo(s * 3.6, 6.6); c.closePath(); }, ORANGE, null, null, 0.8);
+    case 6: { // tractor-beam emitter: dish, prongs, lens and a beam cone
+      const beam = 0.35 + k * 0.6 + Math.sin(time * 5) * 0.06;
+      c.save(); c.globalCompositeOperation = 'lighter';
+      c.fillStyle = rad(c, 0, 12, 0, 12, [[0, `rgba(120,250,255,${0.55 * beam})`], [1, 'rgba(120,250,255,0)']]);
+      c.beginPath(); c.moveTo(-1.6, 12); c.lineTo(1.6, 12); c.lineTo(7.5, 24); c.lineTo(-7.5, 24); c.closePath(); c.fill();
+      c.restore();
+      glow(c, 0, 10, 9 + k * 3, '#00e5ff', 0.4);
+      cel(c, rr(c, -2, 0, 4, 4.6, 1.2), DARK, DARK_SH, rr(c, 0.6, 0, 1.4, 4.6, 0.6), 0.95);
+      for (const s of [-1, 1]) cel(c, () => { c.beginPath(); c.moveTo(s * 2, 1); c.lineTo(s * 5.2, 3.6); c.lineTo(s * 4.4, 5.2); c.lineTo(s * 2, 4.2); c.closePath(); }, ORANGE, ORANGE_SH, null, 0.85);
       collar();
-      cel(c, circ(c, 0, 8.6, 2.8), '#c7fbff', null, null, 1);
-      c.fillStyle = '#00e5ff'; c.beginPath(); c.arc(0, 8.6, 1.5 + Math.sin(time * 10) * 0.3, 0, 6.28); c.fill();
-      c.save(); c.translate(0, 8.6); c.rotate(time * 3);
-      c.strokeStyle = 'rgba(120,250,255,0.9)'; c.lineWidth = 0.8; ellipse(c, 0, 0, 5.4, 1.8); c.stroke();
+      // dish
+      cel(c, ell(c, 0, 6.6, 6.2, 2.4), SHELL, SHELL_SH, ell(c, 1.5, 7.4, 6, 2), 1.1);
+      c.fillStyle = rad(c, 0, 6.8, 0, 5, [[0, '#a5f3fc'], [0.6, '#2a6f7e'], [1, '#17323a']]);
+      ellipse(c, 0, 6.9, 4.6, 1.6); c.fill();
+      // prongs to the lens
+      for (const s of [-1, 0, 1]) tube(c, [s * 3.6, 6.8, s * 0.9, 11.2], 0.75, METAL);
+      cel(c, circ(c, 0, 11.6, 2.1), '#c7fbff', '#7ee7f2', circ(c, 0.7, 12.3, 1.7), 1);
+      c.fillStyle = '#00e5ff'; c.beginPath(); c.arc(0, 11.6, 1.1 + Math.sin(time * 10) * 0.25, 0, 6.28); c.fill();
+      c.fillStyle = '#fff'; c.beginPath(); c.arc(-0.7, 10.9, 0.45, 0, 6.28); c.fill();
+      c.save(); c.translate(0, 11.6); c.rotate(time * 3);
+      c.strokeStyle = 'rgba(140,250,255,0.9)'; c.lineWidth = 0.8; ellipse(c, 0, 0, 4.6, 1.5); c.stroke();
       c.restore();
       break;
     }

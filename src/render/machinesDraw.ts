@@ -29,7 +29,7 @@ function bufferBar(c: C, x: number, y: number, w: number, frac: number) {
 /** Floating status badge: ! full, z idle, broken link when it can't deliver anywhere. */
 function statusBubble(c: C, m: Machine, x: number, y: number, time: number) {
   const def = MACHINES[m.type];
-  const stranded = def.buffer > 0 && !m.inService && !m.linked;
+  const stranded = def.buffer > 0 && m.type !== 'robots' && !m.inService && !m.linked;
   if (m.status === 'working' && !stranded) return;
   const bob = Math.sin(time * 3 + m.id) * 1.5;
   c.save();
@@ -813,10 +813,10 @@ const beaconBase = () => cachedLayer('beacon1', -8, -40, 82, 112, (c) => {
     c.fillStyle = SCI.teal; c.fillRect(px - 3.6, py - h * 0.45, 7.2, 1.6);
     rrect(c, px - 3, py - h - 3, 6, 4, 1.6); c.fillStyle = SCI.violet; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.8; c.stroke();
   }
-  // antenna mast at the back
-  pipe(c, [52, 18, 52, -24], 1.6, SCI.violet);
-  for (const yy of [-6, -16]) pipe(c, [48, yy, 56, yy], 0.9, SCI.violet);
-  ellipse(c, 52, 19, 4, 2); c.fillStyle = SCI.violetD; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.8; c.stroke();
+  // antenna mast at the back, between the rear pylons
+  pipe(c, [32, 20, 32, -22], 1.6, SCI.violet);
+  for (const yy of [-4, -14]) pipe(c, [28, yy, 36, yy], 0.9, SCI.violet);
+  ellipse(c, 32, 21, 4, 2); c.fillStyle = SCI.violetD; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.8; c.stroke();
   // little sign
   rrect(c, -2, 46, 22, 9, 3); c.fillStyle = SCI.orange; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.9; c.stroke();
   stencil(c, 'TELEP.', 9, 51, 4.4, '#3b1d05');
@@ -864,7 +864,7 @@ function drawBeacon(c: C, m: Machine, x: number, y: number, time: number, g: Gam
     const a = (i / 8) * 6.28;
     lamp(c, pcx + Math.cos(a) * 19.5, pcy + Math.sin(a) * 9.6, SCI.cyan, Math.floor(time * 6) % 8 === i, 0.7);
   }
-  lamp(c, x + 52, y - 26, '#f87171', Math.sin(time * 3 + m.id) > 0.2, 1.4);
+  lamp(c, x + 32, y - 24, '#f87171', Math.sin(time * 3 + m.id) > 0.2, 1.4);
   if (near && onScreen && Math.random() < 0.08) fx.burst(pcx + (Math.random() - 0.5) * 16, pcy - 10, 'magic', 1);
 }
 

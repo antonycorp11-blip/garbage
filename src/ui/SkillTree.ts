@@ -138,7 +138,7 @@ export class SkillTree {
     const rt = svg('text', { y: 12, 'text-anchor': 'middle', class: 'sk-root-ic' }, root);
     rt.textContent = '👑';
     const rl = svg('text', { y: 72, 'text-anchor': 'middle', class: 'sk-name' }, root);
-    rl.textContent = 'Reino do Lixo';
+    rl.textContent = 'Coração do Posto';
 
     const addLink = (from: string, to: string, cross: boolean) => {
       const a = from === 'root' ? { x: 0, y: 0 } : nodePos(UPGRADE_MAP[from]);

@@ -24,7 +24,7 @@ export const BRANCHES: { id: Branch; name: string; color: string }[] = [
 
 export const UPGRADES: UpgradeDef[] = [
   // ---- COLETA ----
-  { id: 'c_bag', branch: 'coleta', name: 'Mochila Reforçada', icon: '🎒', desc: 'Soldamos outro tanque por cima do tanque das costas.', effect: '+55% capacidade', max: 14, base: 18, growth: 1.75, req: [], col: 1, row: 0 },
+  { id: 'c_bag', branch: 'coleta', name: 'Tanque Reforçado', icon: '🛢️', desc: 'Soldamos outro tanque por cima do tanque das costas.', effect: '+55% capacidade', max: 14, base: 18, growth: 1.75, req: [], col: 1, row: 0 },
   { id: 'c_speed', branch: 'coleta', name: 'Pinças Turbinadas', icon: '🔧', desc: 'Pinças com fita isolante e um motorzinho de liquidificador. Aerodinâmica.', effect: '+15% velocidade de coleta', max: 10, base: 30, growth: 1.7, req: [], col: 0, row: 1 },
   { id: 'c_move', branch: 'coleta', name: 'Pneu Off-Road', icon: '🛞', desc: 'Atravesse pilhas de sucata sem perder o ritmo (nem os parafusos).', effect: '+10% movimento, menos lentidão no lixo', max: 6, base: 45, growth: 2.1, req: [['c_bag', 1]], col: 2, row: 1 },
   { id: 'c_unload', branch: 'coleta', name: 'Descarga Rápida', icon: '⏬', desc: 'Virar a mochila de cabeça para baixo. Técnica milenar.', effect: '×1,8 velocidade de descarga', max: 5, base: 120, growth: 2.4, req: [['c_bag', 2]], col: 1, row: 2 },
