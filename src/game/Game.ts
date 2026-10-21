@@ -166,15 +166,28 @@ export class Game {
   }
 
   /** Zone (tiles around where it was built) a collector may roam in. */
-  roamRadius(m: Machine) { return 7 + 2.5 * (m.level - 1); }
+  roamRadius(m: Machine) { return 11 + 3 * (m.level - 1); }
 
   /** Idle collectors drive themselves to the nearest junk in their zone. */
   private updateRoamers() {
     for (const m of this.machines.machines) {
+      if (m.type === 'collector' && m.status === 'full' && !m.inService && !(m.outConveyor >= 0 && m.linked) && this.isUnlocked('conveyor')) {
+        // stranded with a full bin: lay belts to the depot on its own
+        const t = this.autoLinkT.get(m.id) ?? 0;
+        if (this.stats.playTime >= t) {
+          this.autoLinkT.set(m.id, this.stats.playTime + 20);
+          const e = this.connectToDepot(m);
+          if (e && this.beltWarnT <= 0) { this.beltWarnT = 40; this.notify(`Um coletor está cheio e longe do posto. Esteiras automáticas: ${e}`, 'Sistema'); }
+        }
+        continue;
+      }
       if (m.type !== 'collector' || m.idleT < 2 || m.ox || m.oy) continue;
       m.idleT = 0;
       if (m.outConveyor >= 0) { this.roamWithBelts(m); continue; }
-      const spot = this.roamSpot(m);
+      const inService = this.inServiceArea(m.type, m.anchorX, m.anchorY);
+      // inside the depot circle first (free); when that runs dry, leave it with belts
+      let spot = this.roamSpot(m, inService);
+      if (!spot && inService && this.isUnlocked('conveyor')) { this.roamWithBelts(m); continue; }
       // nothing left in the zone: look again much later
       if (!spot) { m.idleT = -12; continue; }
       this.machines.relocate(m, spot.tx, spot.ty);
@@ -183,6 +196,7 @@ export class Game {
   }
 
   private beltWarnT = 0;
+  private autoLinkT = new Map<number, number>();
 
   /** Belts that only exist to serve this machine: its output belt and what follows until another line joins. */
   private privateBelts(m: Machine): Machine[] {
@@ -247,9 +261,8 @@ export class Game {
     this.machines.linksDirty = true;
   }
 
-  roamSpot(m: Machine): { tx: number; ty: number } | null {
+  roamSpot(m: Machine, keepService = false): { tx: number; ty: number } | null {
     const R = this.roamRadius(m);
-    const keepService = m.outConveyor < 0 && this.inServiceArea(m.type, m.anchorX, m.anchorY);
     let best: { tx: number; ty: number } | null = null, bs = Infinity;
     for (let y = Math.floor(m.anchorY - R); y <= Math.ceil(m.anchorY + R); y++) for (let x = Math.floor(m.anchorX - R); x <= Math.ceil(m.anchorX + R); x++) {
       if (Math.hypot(x - m.anchorX, y - m.anchorY) > R || (x === m.tx && y === m.ty)) continue;
@@ -258,7 +271,8 @@ export class Game {
       const g = this.reachGarbage(m.type, x, y);
       if (g < 15) continue;
       // close and juicy
-      const score = Math.hypot(x - m.tx, y - m.ty) - Math.log(1 + g) * 1.5;
+      // close, juicy, and cheap to reach (inside a depot circle needs no belts)
+      const score = Math.hypot(x - m.tx, y - m.ty) * 0.6 - Math.log(1 + g) * 2 + (this.inServiceArea(m.type, x, y) ? 0 : 2.5);
       if (score < bs) { bs = score; best = { tx: x, ty: y }; }
     }
     return best;
@@ -1389,12 +1403,9 @@ export class Game {
     }
     const m = this.nearMachine();
     if (m) {
-      if (m.bufferTotal > 0) this.context = { kind: 'machine', label: `Esvaziar ${MACHINES[m.type].short} (${Math.floor(m.bufferTotal)})` };
-      else this.context = { kind: 'machine', label: `Ver ${MACHINES[m.type].short}` };
-      if (pressed) {
-        if (m.bufferTotal > 0 && p.carried < this.d.capacity) this.emptyMachineIntoBackpack(m);
-        else this.events.push({ type: 'openMachine', id: m.id });
-      }
+      // the button always opens the machine; emptying is a button in its panel
+      this.context = { kind: 'machine', label: `Ver ${MACHINES[m.type].short}` };
+      if (pressed) this.events.push({ type: 'openMachine', id: m.id });
       return;
     }
     if (hub) {

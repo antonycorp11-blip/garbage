@@ -168,7 +168,7 @@ export class UI {
       else hint.innerHTML = `<span class="key">E</span> ${esc(ctx.label)}${ctx.progress ? `<span class="prog"><i style="width:${ctx.progress * 100}%"></i></span>` : ''}`;
       const ib = this.el.btnInteract;
       ib.classList.toggle('dim', ctx.kind === 'none');
-      ib.textContent = ctx.kind === 'special' ? 'ABRIR' : ctx.kind === 'machine' ? (ctx.label.startsWith('Esvaziar') ? 'ESVAZIAR' : 'VER') : ctx.kind === 'depot' ? 'VENDER' : 'INTERAGIR';
+      ib.textContent = ctx.kind === 'special' ? 'ABRIR' : ctx.kind === 'machine' ? 'VER' : ctx.kind === 'depot' ? 'VENDER' : 'INTERAGIR';
     }
     this.refreshT -= dt;
     if (this.modalTab && this.refreshT <= 0 && !this.recentlyPressed()) {

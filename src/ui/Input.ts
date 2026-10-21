@@ -7,6 +7,8 @@ export interface PointerSink {
   zoom(factor: number): void;
   key(code: string): void;
   buildMode(): boolean;
+  /** a quick tap that started the joystick: select whatever is there */
+  quickTap?(sx: number, sy: number): void;
 }
 
 type Role = 'joy' | 'world' | 'pinch';
@@ -185,8 +187,11 @@ export class Input {
     const p = this.pointers.get(id);
     if (!p) return;
     this.pointers.delete(id);
-    if (p.role === 'joy') this.releaseJoy();
-    else if (p.role === 'world') {
+    if (p.role === 'joy') {
+      this.releaseJoy();
+      const tap = !cancelled && Math.hypot(p.x - p.sx, p.y - p.sy) < 12 && performance.now() - p.t < 280;
+      if (tap) this.sink.quickTap?.(x, y);
+    } else if (p.role === 'world') {
       const tap = !cancelled && Math.hypot(p.x - p.sx, p.y - p.sy) < 12 && performance.now() - p.t < 400;
       this.sink.worldUp(x, y, true, tap);
     } else if (p.role === 'pinch') {

@@ -326,6 +326,13 @@ export class App implements PointerSink {
     return !touch;
   }
 
+  quickTap(sx: number, sy: number) {
+    if (this.ui.popupOpen || this.ui.modalTab || this.build) return;
+    const t = this.renderer.tileAtScreen(sx, sy);
+    const m = this.game.machines.at(t.tx, t.ty);
+    if (m) this.ui.select(m);
+  }
+
   worldMove(sx: number, sy: number, touch?: boolean) {
     const b = this.build;
     if (!b) return;
