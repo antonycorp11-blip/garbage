@@ -1250,8 +1250,8 @@ function drawRover(c: C, b: Bot, time: number, fx: Effects, onScreen: boolean) {
     for (let k = 0; k < MAT_COUNT; k++) if (k !== m1 && b.carry[k] > 0 && (m2 < 0 || b.carry[k] > b.carry[m2])) m2 = k;
     c.save(); c.rotate(-ang);
     const hx = Math.cos(ang) * -5.5, hy = Math.sin(ang) * -5.5;
-    if (m2 >= 0) drawMatIcon(c, m2, hx + 2.4, hy + 1.6, 6);
-    drawMatIcon(c, m1, hx - 1.2, hy - 0.6, 7.5);
+    if (m2 >= 0) drawMatIcon(c, m2, hx + 2.8, hy + 2, 8);
+    drawMatIcon(c, m1, hx - 1.2, hy - 0.8, 10);
     c.restore();
   }
   c.fillStyle = 'rgba(255,255,255,0.55)'; c.fillRect(-11, -5, 3, 1.4);
@@ -1452,22 +1452,45 @@ function drawVortex(c: C, m: Machine, b: Bot, time: number, fx: Effects, onScree
     c.beginPath(); c.arc(0, 0, 10 + i * 6, time * 4 + i, time * 4 + i + 3.6); c.stroke();
   }
   c.restore();
-  // the funnel: stacked rotating ellipses, wide at the top
-  c.save();
-  c.globalCompositeOperation = 'lighter';
-  const H = 40;
-  for (let i = 0; i < 9; i++) {
-    const t = i / 8;
-    const yy = y - t * H;
-    const rx = 4 + t * t * 16;
-    const sway = Math.sin(time * 3 + t * 4) * (2 + t * 4);
-    const a0 = time * (7 - t * 3) + i;
-    c.strokeStyle = i % 2 ? `rgba(192,132,252,${0.75 - t * 0.3})` : `rgba(95,242,255,${0.8 - t * 0.3})`;
-    c.lineWidth = 2.2 - t * 0.8;
-    c.beginPath(); c.ellipse(x + sway, yy, rx, rx * 0.32, 0, a0, a0 + 4.4); c.stroke();
+  // the funnel: a solid twisting body, then bright spiral bands on top
+  const H = 44;
+  const N = 12;
+  const left: number[] = [], right: number[] = [];
+  for (let i = 0; i <= N; i++) {
+    const t = i / N;
+    const rx = 3.5 + t * t * 17;
+    const sway = Math.sin(time * 3 + t * 4) * (1.5 + t * 4);
+    left.push(x + sway - rx, y - t * H);
+    right.push(x + sway + rx, y - t * H);
   }
-  glow(c, x, y - 6, 16, '#a78bfa', 0.35);
+  const body = () => {
+    c.beginPath(); c.moveTo(left[0], left[1]);
+    for (let i = 1; i <= N; i++) c.lineTo(left[i * 2], left[i * 2 + 1]);
+    for (let i = N; i >= 0; i--) c.lineTo(right[i * 2], right[i * 2 + 1]);
+    c.closePath();
+  };
+  body();
+  c.fillStyle = lin(c, x - 20, 0, x + 20, 0, [[0, 'rgba(76,29,149,0.85)'], [0.45, 'rgba(167,139,250,0.85)'], [0.7, 'rgba(95,242,255,0.8)'], [1, 'rgba(59,7,100,0.85)']]);
+  c.fill();
+  c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+  c.save(); body(); c.clip();
+  c.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 14; i++) {
+    const t = ((i / 14) + time * 0.9) % 1;
+    const yy = y - t * H;
+    const rx = 3.5 + t * t * 17;
+    const sway = Math.sin(time * 3 + t * 4) * (1.5 + t * 4);
+    c.strokeStyle = i % 2 ? 'rgba(220,250,255,0.75)' : 'rgba(244,171,252,0.6)';
+    c.lineWidth = 1.4;
+    c.beginPath(); c.moveTo(x + sway - rx, yy + rx * 0.25); c.quadraticCurveTo(x + sway, yy - rx * 0.35, x + sway + rx, yy - rx * 0.1); c.stroke();
+  }
   c.restore();
+  // rim at the top mouth
+  c.save(); c.translate(right[N * 2] - 20.5, y - H);
+  ellipse(c, 0, 0, 20.5, 5.5); c.fillStyle = 'rgba(59,7,100,0.9)'; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+  ellipse(c, 0, 0, 16, 3.6); c.strokeStyle = SCI.cyan; c.lineWidth = 1.2; c.stroke();
+  c.restore();
+  glow(c, x, y - 8, 18, '#a78bfa', 0.35);
   // debris orbiting and being sucked up: material icons spiralling
   for (let i = 0; i < 4; i++) {
     const k = ((time * 0.6 + i / 4 + m.id * 0.1) % 1);
@@ -1477,8 +1500,5 @@ function drawVortex(c: C, m: Machine, b: Bot, time: number, fx: Effects, onScree
     const iy = y - k * H + Math.sin(a) * rr * 0.3;
     drawMatIcon(c, (i + m.id) % 5, ix, iy, 6 + (1 - k) * 2);
   }
-  // bright eye of the storm
-  c.beginPath(); c.arc(x, y - H - 2, 3, 0, 6.28); c.fillStyle = '#fff'; c.fill();
-  glow(c, x, y - H - 2, 9, SCI.cyan, 0.5);
   if (onScreen && Math.random() < 0.6) fx.suck(x + (Math.random() - 0.5) * 40, y + (Math.random() - 0.5) * 22, x, y - 10, Math.floor(Math.random() * 5), 0.4);
 }

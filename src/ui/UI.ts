@@ -735,7 +735,7 @@ export class UI {
     e.style.display = ev ? '' : 'none';
     if (ev) {
       const icon = ev.kind === 'meteor' ? '☄️' : ev.kind === 'ion' ? '⚡' : '📦';
-      const html = `${icon} ${esc(ev.title)} <b>${Math.max(0, Math.ceil(ev.until - g.stats.playTime))}s</b>${ev.kind !== 'ion' ? ' <b>Ir ›</b>' : ''}`;
+      const html = `${icon} <span class="et">${esc(ev.title)}</span> <b>${Math.max(0, Math.ceil(ev.until - g.stats.playTime))}s${ev.kind !== 'ion' ? ' ›' : ''}</b>`;
       if (e.innerHTML !== html) e.innerHTML = html;
     }
   }

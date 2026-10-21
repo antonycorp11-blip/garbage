@@ -59,6 +59,46 @@ export class Renderer {
     return { x: (x - this.cam.x) * this.cam.zoom + this.W / 2, y: (y - this.cam.y) * this.cam.zoom + this.H / 2 };
   }
 
+  /** Cargo pod and meteor shower markers in the world. */
+  private drawWorldEvent(c: CanvasRenderingContext2D, time: number) {
+    const ev = this.game.worldEvent;
+    if (!ev) return;
+    const INK = '#2a1a10';
+    if (ev.kind === 'cargo') {
+      const x = ev.x, y = ev.y, bob = Math.sin(time * 3) * 2;
+      // beacon light column
+      const g = c.createLinearGradient(x, y - 120, x, y);
+      g.addColorStop(0, 'rgba(250,204,21,0)'); g.addColorStop(1, 'rgba(250,204,21,0.35)');
+      c.fillStyle = g; c.fillRect(x - 6, y - 120, 12, 120);
+      c.fillStyle = 'rgba(20,12,30,0.35)'; c.beginPath(); c.ellipse(x, y + 10, 16, 5, 0, 0, Math.PI * 2); c.fill();
+      c.save(); c.translate(x, y - 6 + bob);
+      c.lineWidth = 2.2; c.strokeStyle = INK; c.lineJoin = 'round';
+      // capsule body
+      c.fillStyle = '#fff3dc'; c.beginPath(); c.roundRect(-13, -14, 26, 24, 7); c.fill(); c.stroke();
+      c.fillStyle = '#fb923c'; c.fillRect(-13, -4, 26, 6); c.strokeRect(-13, -4, 26, 6);
+      c.fillStyle = '#2dd4bf'; c.beginPath(); c.arc(0, -9, 3.2, 0, Math.PI * 2); c.fill(); c.stroke();
+      // fins
+      c.fillStyle = '#94a3b8';
+      for (const sd of [-1, 1]) { c.beginPath(); c.moveTo(sd * 13, 4); c.lineTo(sd * 19, 12); c.lineTo(sd * 12, 10); c.closePath(); c.fill(); c.stroke(); }
+      // blinking light
+      if (Math.sin(time * 8) > 0) { c.fillStyle = '#fde047'; c.beginPath(); c.arc(0, -18, 2.6, 0, Math.PI * 2); c.fill(); c.stroke(); }
+      c.restore();
+    } else if (ev.kind === 'meteor') {
+      // streaks falling into the sector
+      for (let i = 0; i < 6; i++) {
+        const t = (time * 0.7 + i * 0.37) % 1;
+        const ox = ev.x + Math.sin(i * 12.9) * 7 * TILE, oy = ev.y + Math.cos(i * 7.3) * 7 * TILE;
+        const px = ox - 160 * (1 - t), py = oy - 220 * (1 - t);
+        if (!this.game.isVisible(px, py)) continue;
+        const gr = c.createLinearGradient(px - 40, py - 55, px, py);
+        gr.addColorStop(0, 'rgba(253,186,116,0)'); gr.addColorStop(1, 'rgba(253,224,71,0.9)');
+        c.strokeStyle = gr; c.lineWidth = 4; c.lineCap = 'round';
+        c.beginPath(); c.moveTo(px - 40, py - 55); c.lineTo(px, py); c.stroke();
+        c.fillStyle = '#fff7ed'; c.beginPath(); c.arc(px, py, 3.2, 0, Math.PI * 2); c.fill();
+      }
+    }
+  }
+
   screenToWorld(sx: number, sy: number) {
     return { x: (sx - this.W / 2) / this.cam.zoom + this.cam.x, y: (sy - this.H / 2) / this.cam.zoom + this.cam.y };
   }
@@ -190,6 +230,7 @@ export class Renderer {
     this.fx.drawFlyers(c);
     this.fx.drawParticles(c, view);
     this.fx.drawDrones(c, time);
+    this.drawWorldEvent(c, time);
     this.life.drawSky(c, view, time);
     this.fx.drawTexts(c);
 

@@ -893,3 +893,4 @@ h3.mrole small { font-size: 11px !important; }
 .mbtn.guide { animation: guidepulse 1s ease-in-out infinite; }
 @keyframes guidepulse { 50% { box-shadow: 0 0 0 5px #fde047, 0 4px 0 var(--ink) !important; transform: scale(1.08); } }
 .cbanner.event { background: linear-gradient(180deg, #ede9fe, #a78bfa); color: #2e1065; max-width: 80vw; }
+.chip.evchip .et { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
