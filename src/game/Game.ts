@@ -580,6 +580,7 @@ export class Game {
   // ------------------------------------------------------------------ world helpers
   solidAt(tx: number, ty: number): boolean {
     if (!inWorld(tx, ty)) return true;
+    if (this.ghostT > 0) return false;
     const i = tileIndex(tx, ty);
     const o = this.world.occupant[i];
     if (o >= 0) {
@@ -638,14 +639,25 @@ export class Game {
     return before - this.world.remaining;
   }
 
+  /** seconds left of walking through buildings (escape when the player gets walled in) */
+  ghostT = 0;
+  private pushBlockedT = 0;
+
   private updatePlayer(dt: number, input: InputState) {
     const p = this.player;
+    // never let a corrupted position freeze the player
+    if (!Number.isFinite(p.x) || !Number.isFinite(p.y) || !inWorld(Math.floor(p.tx), Math.floor(p.ty))) {
+      p.x = (CENTER + 0.5) * TILE; p.y = (CENTER + 2.6) * TILE; p.vx = 0; p.vy = 0;
+    }
+    if (!Number.isFinite(p.vx) || !Number.isFinite(p.vy)) { p.vx = 0; p.vy = 0; }
+    this.ghostT = Math.max(0, this.ghostT - dt);
     let mx = input.moveX, my = input.moveY;
     const ml = Math.hypot(mx, my);
     if (ml > 1) { mx /= ml; my /= ml; }
     const tx = Math.floor(p.tx), ty = Math.floor(p.ty);
     const dens = inWorld(tx, ty) ? Math.min(1, this.world.garbage[tileIndex(tx, ty)] / 70) : 0;
-    const speed = this.d.moveSpeed * (1 - this.d.garbageSlow * dens) * (p.collecting && this.tool.mode === 'area' ? 0.8 : 1);
+    let speed = this.d.moveSpeed * (1 - this.d.garbageSlow * dens) * (p.collecting && this.tool.mode === 'area' ? 0.8 : 1);
+    if (!Number.isFinite(speed) || speed < 1) speed = 4.4;
     const tvx = mx * speed, tvy = my * speed;
     const acc = Math.min(1, dt * 14);
     p.vx += (tvx - p.vx) * acc;
@@ -659,6 +671,11 @@ export class Game {
     this.stats.walked += moved;
     p.speedNow = moved / dt;
     p.moving = ml > 0.1 && moved > 0.0005;
+    // pushing the stick but going nowhere for a second => walk through buildings briefly
+    if (ml > 0.3 && moved < 0.002 * Math.max(1, dt * 60)) {
+      this.pushBlockedT += dt;
+      if (this.pushBlockedT > 1) { this.ghostT = 1.5; this.pushBlockedT = 0; }
+    } else this.pushBlockedT = 0;
     if (p.moving) p.walk += dt * (6 + speed * 1.4);
     if (ml > 0.1) p.setFacing(mx, my);
     if (p.action > 0) p.action = Math.max(0, p.action - dt * 3.2);

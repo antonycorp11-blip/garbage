@@ -29,6 +29,8 @@ export class Input {
   pointers = new Map<number, Track>();
   private pinchDist = 0;
   touch = false;
+  /** event counters for the hidden diagnostic overlay */
+  dbg = { start: 0, move: 0, end: 0, joyMove: 0 };
   private readonly nativeTouch = typeof window !== 'undefined' && 'ontouchstart' in window;
 
   constructor(canvas: HTMLCanvasElement, private sink: PointerSink, private joyEl: HTMLElement) {
@@ -57,6 +59,7 @@ export class Input {
       const opts = { passive: false } as AddEventListenerOptions;
       canvas.addEventListener('touchstart', (e) => {
         e.preventDefault();
+        this.dbg.start++;
         this.setTouch(true);
         // every finger is new => anything still tracked is stale (lost gesture)
         if (e.touches.length === e.changedTouches.length) this.resetTouches();
@@ -64,10 +67,12 @@ export class Input {
       }, opts);
       canvas.addEventListener('touchmove', (e) => {
         e.preventDefault();
+        this.dbg.move++;
         for (const t of Array.from(e.changedTouches)) this.touchMove(t.identifier, t.clientX, t.clientY);
       }, opts);
       const end = (e: TouchEvent) => {
         e.preventDefault();
+        this.dbg.end++;
         for (const t of Array.from(e.changedTouches)) this.touchUp(t.identifier, t.clientX, t.clientY, e.type === 'touchcancel');
         if (e.touches.length === 0 && this.joy.id >= 0) this.releaseJoy();
       };
@@ -147,6 +152,7 @@ export class Input {
     if (!p) return;
     p.x = x; p.y = y;
     if (p.role === 'joy') {
+      this.dbg.joyMove++;
       const R = 50;
       const dx = x - this.joy.ox, dy = y - this.joy.oy;
       const l = Math.hypot(dx, dy);

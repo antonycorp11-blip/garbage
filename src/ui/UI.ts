@@ -708,7 +708,8 @@ export class UI {
       <div class="setrow"><label>Mostrar áreas de serviço dos depósitos</label><button class="toggle ${st.ranges ? 'on' : ''}" data-r>${st.ranges ? 'Sim' : 'Não'}</button></div>
       <div class="setrow"><label>Salvar agora <span class="muted">(o jogo salva sozinho a cada 15 s)</span></label><button class="btn ghost" data-save>Salvar</button></div>
       <div class="setrow"><label>Apagar todo o progresso</label><button class="btn red" data-reset>Reiniciar progresso</button></div>
-      <p class="muted" style="margin-top:14px;font-size:13px">Garbage Kingdom — arte, animações, música e efeitos 100% gerados por código. Controles: WASD/setas para andar, segure o botão do mouse ou ESPAÇO para coletar, E para interagir, roda do mouse para zoom, B construir, U melhorias, T ferramentas, I depósito, M mapa, R girar esteira, Esc fechar.</p>`;
+      <p class="muted" style="margin-top:14px;font-size:13px">Garbage Kingdom — arte, animações, música e efeitos 100% gerados por código. Controles: WASD/setas para andar, segure o botão do mouse ou ESPAÇO para coletar, E para interagir, roda do mouse para zoom, B construir, U melhorias, T ferramentas, I depósito, M mapa, R girar esteira, Esc fechar.</p><p class="ver" data-ver>versão ${__BUILD__}</p>`;
+    this.bindVersion(body);
     body.querySelectorAll('input[data-s]').forEach((i) => i.addEventListener('input', () => {
       const inp = i as HTMLInputElement;
       (st as unknown as Record<string, number>)[inp.dataset.s!] = Number(inp.value);
@@ -778,13 +779,27 @@ export class UI {
     });
   }
 
+  /** tapping the version 5 times toggles the diagnostic overlay */
+  private bindVersion(root: HTMLElement) {
+    const v = root.querySelector('[data-ver]') as HTMLElement | null;
+    if (!v) return;
+    let n = 0, t = 0;
+    v.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const now = performance.now();
+      n = now - t < 800 ? n + 1 : 1; t = now;
+      if (n >= 5) { n = 0; this.app.toggleDebug(); }
+    });
+  }
+
   introPopup(isNew: boolean, onStart: () => void) {
     this.queuePopup(() => {
       const el = h(`<div class="popup intro"><div class="logo">GARBAGE<br/><span>KINGDOM</span></div>
         <p>${isNew ? 'Você comprou um terreno por R$ 1,00. Ele vem com <b>1.000.000 de unidades de lixo</b>. Limpe tudo. Uma coisa de cada vez. Depois, mil de cada vez.' : 'Bem-vindo de volta, Majestade. O lixo sentiu sua falta. Ele não foi a lugar nenhum.'}</p>
         <p class="muted" style="font-size:13px">${document.body.classList.contains('touch') ? 'Joystick à esquerda para andar · segure COLETAR' : 'WASD para andar · segure o mouse ou ESPAÇO para coletar · E interage'}</p>
-        <button class="btn" data-ok style="font-size:18px;padding:12px 30px">${isNew ? 'Começar a limpar' : 'Continuar'}</button></div>`);
+        <button class="btn" data-ok style="font-size:18px;padding:12px 30px">${isNew ? 'Começar a limpar' : 'Continuar'}</button><p class="ver" data-ver>versão ${__BUILD__}</p></div>`);
       el.querySelector('[data-ok]')!.addEventListener('click', onStart);
+      this.bindVersion(el);
       return el;
     });
   }

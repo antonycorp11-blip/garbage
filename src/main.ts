@@ -35,6 +35,8 @@ export class App implements PointerSink {
   private saveT = 0;
   private fpsAcc = 0;
   private fpsN = 0;
+  private debugEl: HTMLElement | null = null;
+  private debugT = 0;
 
   constructor() {
     try { Object.assign(this.settings, JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}')); } catch { /* ignore */ }
@@ -364,8 +366,21 @@ export class App implements PointerSink {
     try { this.step(now); } catch (e) { this.reportError(e); }
   }
 
-  private step(now: number) {
-    const dt = Math.min(0.05, Math.max(0, (now - this.last) / 1000));
+  toggleDebug() {
+    if (this.debugEl) { this.debugEl.remove(); this.debugEl = null; return; }
+    const el = document.createElement('pre');
+    el.id = 'debug';
+    el.style.cssText = 'position:fixed;left:6px;top:6px;z-index:9999;margin:0;padding:6px 8px;max-width:calc(100vw - 12px);white-space:pre-wrap;font:11px/1.35 monospace;color:#bef264;background:rgba(0,0,0,.78);border-radius:6px;pointer-events:none';
+    document.body.appendChild(el);
+    this.debugEl = el;
+  }
+
+  private step(_ts: number) {
+    // own clock: some browsers hand rAF timestamps in a different time base
+    const now = performance.now();
+    let dt = (now - this.last) / 1000;
+    if (!Number.isFinite(dt) || dt < 0) dt = 0.016;
+    dt = Math.min(0.05, dt);
     this.last = now;
     this.time += dt;
     this.fpsAcc += dt; this.fpsN++;
@@ -394,6 +409,19 @@ export class App implements PointerSink {
       if (this.started) g.update(dt, state);
       else g.update(dt, { moveX: 0, moveY: 0, collect: false, interact: false, aim: null });
     } catch (e) { this.reportError(e); }
+    if (this.debugEl && (this.debugT -= dt) <= 0) {
+      this.debugT = 0.2;
+      const p = g.player, j = inp.joy, d = inp.dbg, f = (n: number) => (Number.isFinite(n) ? n.toFixed(2) : String(n));
+      this.debugEl.textContent = [
+        `versão ${__BUILD__}`,
+        `started ${this.started} · popup ${this.ui.popupOpen} · modal ${this.ui.modalTab || '-'} · build ${!!this.build}`,
+        `touch ${inp.touch} · eventos start ${d.start} move ${d.move} end ${d.end} joyMove ${d.joyMove}`,
+        `joy id ${j.id} x ${f(j.x)} y ${f(j.y)} · dedos ${inp.pointers.size}`,
+        `entrada ${f(mx)}, ${f(my)} · dt ${f(dt * 1000)}ms`,
+        `jogador ${f(p.tx)}, ${f(p.ty)} · vel ${f(p.vx)}, ${f(p.vy)} · speed ${f(g.d.moveSpeed)}`,
+        `andando ${p.moving} · fantasma ${f(g.ghostT)} · ${navigator.userAgent.slice(0, 90)}`,
+      ].join('\n');
+    }
     for (const e of g.events.splice(0)) {
       if (e.type === 'ending') this.renderer.endingT = 0;
       this.ui.handleEvent(e);
