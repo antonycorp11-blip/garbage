@@ -84,6 +84,8 @@ export class App implements PointerSink {
     const first = !this.started;
     // the game must start even if this browser refuses audio
     this.started = true;
+    // phones play in landscape (honored by Android when installed / fullscreen)
+    try { (screen.orientation as unknown as { lock?: (o: string) => Promise<void> })?.lock?.('landscape')?.catch(() => undefined); } catch { /* unsupported */ }
     try {
       this.audio.init();
       this.audio.setMusic(this.settings.music);

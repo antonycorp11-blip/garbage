@@ -527,8 +527,8 @@ export class UI {
   private renderBuild(body: HTMLElement) {
     const g = this.game;
     const yardPct = Math.min(100, (g.yardTotal / Math.max(1, g.yardCap())) * 100);
-    let html = `<div class="flow"><span class="fs coleta">① Coletar</span><i>→</i><span class="fs logistica">② Levar</span><i>→</i><span class="fs processamento">③ Processar</span></div>
-      <div class="yardbar"><span>Pátio do depósito</span><b>${fmtInt(g.yardTotal)} / ${fmtInt(g.yardCap())}</b><span>· ${fmtShort(g.processRate())}/s</span><div class="yb"><i style="width:${yardPct}%"></i></div></div>`;
+    let html = `<div class="bhead"><div class="flow"><span class="fs coleta">① Coletar</span><i>→</i><span class="fs logistica">② Levar</span><i>→</i><span class="fs processamento">③ Processar</span></div>
+      <div class="yardbar"><span>Pátio do depósito</span><b>${fmtInt(g.yardTotal)} / ${fmtInt(g.yardCap())}</b><span>· ${fmtShort(g.processRate())}/s</span><div class="yb"><i style="width:${yardPct}%"></i></div></div></div>`;
     const roles: MachineRole[] = ['coleta', 'logistica', 'processamento', 'deposito'];
     const roleShort: Record<MachineRole, string> = { coleta: 'Coleta', logistica: 'Logística', processamento: 'Processamento', deposito: 'Depósitos' };
     const roleSub: Record<MachineRole, string> = { coleta: 'tiram o lixo do chão', logistica: 'levam até o depósito', processamento: 'o depósito dar conta', deposito: 'recebem tudo' };
@@ -555,7 +555,7 @@ export class UI {
           <div class="nm">${def.short}<span class="more">${open ? '▴' : 'ⓘ'}</span></div>
           <div class="fn">${esc(def.func)}</div>
           ${open ? `<div class="ds">${esc(def.desc)}</div><div class="st">${stats.map((x) => `<span>${x}</span>`).join('')}<span>${def.size}×${def.size}</span>${def.buffer ? `<span>▣ ${def.buffer}</span>` : ''}</div>` : stats.length ? `<div class="st">${stats.slice(0, 2).map((x) => `<span>${x}</span>`).join('')}</div>` : ''}
-          ${unl ? `<div class="cst">${this.costHtml(cost)}</div><button class="btn ${miss ? 'disabled' : 'green'}" data-b="${t}">${miss ? 'Falta recurso' : owned ? 'Construir +1' : 'Construir'}</button>` : `<div class="lockline">Desbloqueie na árvore:<b>${esc(lockTxt)}</b></div>`}
+          ${unl ? `<div class="buy"><div class="cst">${this.costHtml(cost)}</div><button class="btn ${miss ? 'disabled' : 'green'}" data-b="${t}">${miss ? 'Falta recurso' : owned ? 'Construir +1' : 'Construir'}</button></div>` : `<div class="lockline">Desbloqueie na árvore:<b>${esc(lockTxt)}</b></div>`}
         </div>`;
       }
       html += `</div>`;
@@ -585,10 +585,18 @@ export class UI {
     const c = cv.getContext('2d')!;
     c.translate(72, 50); c.scale(3.2, 3.2); c.rotate(-0.6);
     if (tier === 0) {
-      c.fillStyle = '#d6c27a';
-      c.beginPath(); c.ellipse(0, 6, 6, 7, 0, 0, 6.28); c.fill();
-      for (let i = 0; i < 4; i++) { c.beginPath(); c.ellipse(-4.5 + i * 3, -2, 1.4, 4, 0, 0, 6.28); c.fill(); }
-      c.strokeStyle = '#8a7a3a'; c.lineWidth = 0.6; c.stroke();
+      // the robot's factory pincers
+      c.rotate(0.6);
+      c.lineJoin = 'round'; c.lineCap = 'round';
+      c.strokeStyle = '#2a1a10'; c.lineWidth = 1.2;
+      c.fillStyle = '#9aa6b2';
+      c.beginPath(); c.roundRect(-2.5, 4, 5, 9, 1.5); c.fill(); c.stroke();
+      c.fillStyle = '#2bb5a8';
+      c.beginPath(); c.arc(0, 4, 4.2, 0, 6.28); c.fill(); c.stroke();
+      for (const sx of [-1, 1]) {
+        c.beginPath(); c.moveTo(sx * 2.2, 1.5); c.quadraticCurveTo(sx * 7.5, -4, sx * 2.6, -10); c.lineTo(sx * 1.2, -8.5); c.quadraticCurveTo(sx * 4.5, -4, sx * 0.6, 0.5); c.closePath(); c.fill(); c.stroke();
+      }
+      c.fillStyle = '#e6f7f5'; c.beginPath(); c.arc(-1.2, 2.8, 1, 0, 6.28); c.fill();
     } else drawTool(c, tier, 0.5, 1, true);
     url = cv.toDataURL();
     this.thumbs.set(key, url);

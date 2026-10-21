@@ -1,0 +1,11 @@
+{
+  "name": "Garbage Kingdom",
+  "short_name": "Garbage",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#1b140d",
+  "theme_color": "#1b140d",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}
