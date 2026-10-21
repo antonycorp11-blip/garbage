@@ -77,7 +77,7 @@ export class SkillTree {
     ctrl.querySelectorAll('button').forEach((b) => b.addEventListener('click', (e) => {
       e.stopPropagation();
       const z = (b as HTMLElement).dataset.z!;
-      if (z === 'fit') this.fit(); else this.zoomAt(Number(z), this.svgEl.clientWidth / 2, this.svgEl.clientHeight / 2);
+      if (z === 'fit') this.fit(true); else this.zoomAt(Number(z), this.svgEl.clientWidth / 2, this.svgEl.clientHeight / 2);
     }));
     this.el.appendChild(ctrl);
     const legend = document.createElement('div');
@@ -203,7 +203,7 @@ export class SkillTree {
     this.world.setAttribute('transform', `translate(${this.view.x} ${this.view.y}) scale(${this.view.s})`);
   }
 
-  fit() {
+  fit(overview = false) {
     const w = this.svgEl.clientWidth || 800, h = this.svgEl.clientHeight || 500;
     const sideMode = this.detail.offsetWidth < this.el.clientWidth * 0.6 && this.detail.offsetHeight > this.el.clientHeight * 0.6;
     const panel = sideMode ? 0 : this.detail.offsetHeight + 24;
@@ -213,7 +213,8 @@ export class SkillTree {
     x0 -= 80; x1 += 80; y0 -= 70; y1 += 110;
     const avail = h - panel;
     const aw = w - panelW;
-    this.view.s = Math.max(0.3, Math.min(1.1, Math.min(aw / (x1 - x0), avail / (y1 - y0))));
+    // never so small that names are unreadable: the tree pans instead
+    this.view.s = Math.max(overview ? 0.35 : 0.6, Math.min(1.1, Math.min(aw / (x1 - x0), avail / (y1 - y0))));
     this.view.x = aw / 2 - ((x0 + x1) / 2) * this.view.s;
     this.view.y = avail / 2 - ((y0 + y1) / 2) * this.view.s + 6;
     if (this.view.s < 0.85 && !this.fittedOnce) {

@@ -14,6 +14,8 @@
   --font: 'Nunito', system-ui, -apple-system, 'Segoe UI', sans-serif;
   --safe-b: env(safe-area-inset-bottom, 0px);
   --safe-t: env(safe-area-inset-top, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font); -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; touch-action: none; overscroll-behavior: none; }
@@ -318,18 +320,18 @@ table.inv td:last-child { border-radius: 0 10px 10px 0; text-align: right; white
   .hud-counter .num { font-size: 22px; }
   .hud-counter .bar { height: 4px; margin: 3px 0 2px; }
   .hud-counter .sub { font-size: 10px; }
-  .hud-left { top: calc(4px + var(--safe-t)); left: calc(6px + env(safe-area-inset-left, 0px)); right: auto; width: 168px; flex-direction: column; gap: 4px; }
+  .hud-left { top: calc(4px + var(--safe-t)); left: calc(6px + var(--safe-l)); right: auto; width: 168px; flex-direction: column; gap: 4px; }
   .hud-left .chip { flex: none; }
-  .hud-right { flex-direction: row; top: calc(4px + var(--safe-t)); right: calc(6px + env(safe-area-inset-right, 0px)); gap: 4px; max-width: calc(50vw - 120px); flex-wrap: wrap; justify-content: flex-end; }
+  .hud-right { flex-direction: row; top: calc(4px + var(--safe-t)); right: calc(6px + var(--safe-r)); gap: 4px; max-width: calc(50vw - 120px); flex-wrap: wrap; justify-content: flex-end; }
   .mbtn { width: 36px; height: 36px; border-radius: 10px; }
   .mbtn svg { width: 19px; height: 19px; }
   .goal { top: auto; bottom: calc(8px + var(--safe-b)); left: 50%; transform: translateX(-50%); max-width: 40vw; font-size: 10px; white-space: nowrap; }
-  .msgs { top: calc(88px + var(--safe-t)); left: calc(6px + env(safe-area-inset-left, 0px)); width: min(300px, 38vw); }
+  .msgs { top: calc(88px + var(--safe-t)); left: calc(6px + var(--safe-l)); width: min(300px, 38vw); }
   .msg { font-size: 11px; }
-  .actbtns { flex-direction: row !important; align-items: flex-end; right: calc(12px + env(safe-area-inset-right, 0px)); bottom: calc(12px + var(--safe-b)); gap: 10px; }
+  .actbtns { flex-direction: row !important; align-items: flex-end; right: calc(12px + var(--safe-r)); bottom: calc(12px + var(--safe-b)); gap: 10px; }
   .bigbtn { width: 78px; height: 78px; font-size: 14px; }
   .bigbtn.int { width: 58px; height: 58px; font-size: 10px; }
-  .zoombtns { right: calc(12px + env(safe-area-inset-right, 0px)); bottom: calc(100px + var(--safe-b)); flex-direction: row; }
+  .zoombtns { right: calc(12px + var(--safe-r)); bottom: calc(100px + var(--safe-b)); flex-direction: row; }
   .zoombtns .mbtn { width: 36px; height: 36px; }
   .joyhint { display: none !important; }
   .mpanel { left: auto; right: 10px; width: 280px; top: 50px; bottom: auto; max-height: calc(100vh - 60px); overflow-y: auto; }
@@ -446,7 +448,7 @@ body.modal-open .actbtns, body.modal-open .zoombtns { display: none !important; 
 /* ---------- landscape phones: nav becomes a left rail ---------- */
 @media (orientation: landscape) and (max-height: 520px) {
   .modal { flex-direction: row; }
-  .modal-nav { flex-direction: column; justify-content: flex-start; width: 76px; padding: calc(6px + var(--safe-t)) 4px 6px calc(4px + env(safe-area-inset-left, 0px)); border-top: 0; border-right: 1px solid var(--line); overflow-y: auto; }
+  .modal-nav { flex-direction: column; justify-content: flex-start; width: calc(78px + var(--safe-l)); padding: calc(6px + var(--safe-t)) 4px 6px calc(4px + var(--safe-l)); border-top: 0; border-right: 1px solid var(--line); overflow-y: auto; }
   .modal-nav .nav { flex: none; padding: 5px 2px; }
   .modal-nav .nav svg { width: 20px; height: 20px; }
   .modal-top { padding: 6px 10px; }
@@ -778,7 +780,7 @@ h3.mrole.coleta { color: #ffb02e; } h3.mrole.logistica { color: #38bdf8; } h3.mr
 .cbanner.sector { background: linear-gradient(180deg, #d5fbff, #5eead4); color: #063a36; }
 /* minimap on phones too: small, top-right under the menu row */
 .minimap { border: 2.5px solid var(--ink) !important; box-shadow: 0 3px 0 var(--ink), 0 8px 18px rgba(0,0,0,.35) !important; }
-body.touch .minimap { width: 108px; height: 108px; bottom: auto; top: calc(70px + var(--safe-t)); right: calc(8px + env(safe-area-inset-right, 0px)); border-radius: 12px; }
+body.touch .minimap { width: 108px; height: 108px; bottom: auto; top: calc(70px + var(--safe-t)); right: calc(8px + var(--safe-r)); border-radius: 12px; }
 body.touch.building .minimap { display: none; }
 @media (orientation: portrait) { body.touch .minimap { top: calc(430px + var(--safe-t)); } }
 body.touch.panel-open .minimap { display: none; }
@@ -793,3 +795,11 @@ img.mi { width: 16px; height: 16px; vertical-align: -3px; margin-right: 3px; dis
 img.mi.big { width: 26px; height: 26px; margin: 0; }
 .ccard .rq { grid-template-columns: 26px 1fr auto; }
 .spot-pin img.pm { width: 18px; height: 18px; border: 0; border-radius: 0; margin-left: 2px; }
+
+/* landscape phones: notch-safe modal (the rail keeps its full width beside the notch) */
+@media (orientation: landscape) and (max-height: 520px) {
+  .modal-nav { flex: none !important; min-width: calc(78px + var(--safe-l)); }
+  .modal-nav .nav span { font-size: 10px; }
+  .modal-main { padding-right: var(--safe-r); }
+  .modal-b { padding: 10px 12px; }
+}

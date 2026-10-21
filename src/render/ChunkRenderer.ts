@@ -8,6 +8,9 @@ import { ctx2d, ellipse, lin, makeCanvas } from './paint';
 import { ItemSprites } from './sprites';
 import { drawProp, propAt } from './props';
 import { TileItem, genTileItems, visibleK } from './tileItems';
+import { drawMatIcon } from './matIcons';
+import { MATERIALS } from '../data/materials';
+import { REGIONS } from '../data/regions';
 
 const CPX = CHUNK * TILE;
 
@@ -195,6 +198,33 @@ export class ChunkRenderer {
       if (it.x + s.w < ox || it.x - s.w > ox + CPX || it.y + s.h < oy || it.y - s.h > oy + CPX) continue;
       const k = it.scale;
       c.drawImage(pages[s.page], s.sx, s.sy, s.sw, s.sh, it.x - s.ax * k, it.y - s.ay * k, s.w * k, s.h * k);
+    }
+    // what the junk is made of: a few material pieces poke out of the piles
+    for (let ty = ty0 - 1; ty < ty0 + CHUNK + 1; ty++) for (let tx = tx0 - 1; tx < tx0 + CHUNK + 1; tx++) {
+      if (!inWorld(tx, ty)) continue;
+      const i = tileIndex(tx, ty);
+      const g = w.garbage[i];
+      if (g < 6 || g < w.initial[i] * 0.3) continue;
+      const h = hash2(tx, ty, 77);
+      if (h > 0.3) continue;
+      const reg = REGIONS[w.region[i]];
+      let mat: number;
+      if (hash2(tx, ty, 78) < 0.025 * reg.rareMult) mat = 5;
+      else {
+        const mw = reg.mats, tot = mw[0] + mw[1] + mw[2] + mw[3] + mw[4];
+        let v = hash2(tx, ty, 79) * tot;
+        mat = 0;
+        for (; mat < 4; mat++) { v -= mw[mat]; if (v <= 0) break; }
+      }
+      const x = (tx + 0.2 + hash2(tx, ty, 80) * 0.6) * TILE, y = (ty + 0.15 + hash2(tx, ty, 81) * 0.5) * TILE;
+      const size = 26 + (h / 0.3) * 8;
+      c.fillStyle = 'rgba(20,12,30,0.35)';
+      c.beginPath(); c.ellipse(x, y + size * 0.42, size * 0.42, size * 0.16, 0, 0, Math.PI * 2); c.fill();
+      // a soft glow in the material's color so it pops out of the pile
+      c.globalAlpha = 0.35; c.fillStyle = MATERIALS[mat].color;
+      c.beginPath(); c.arc(x, y, size * 0.62, 0, Math.PI * 2); c.fill();
+      c.globalAlpha = 1;
+      drawMatIcon(c, mat, x, y, size);
     }
     c.restore();
   }
