@@ -3,8 +3,9 @@ import { clamp } from '../core/rng';
 import { DISCOVERIES } from '../data/discoveries';
 import { BUILD_ORDER, MACHINES, MAX_MACHINE_LEVEL, MachineType, machineUpgradeCost } from '../data/machines';
 import { MATERIALS, MAT_COUNT, M_ELEC, M_METAL, M_RARE, emptyMats, sumMats } from '../data/materials';
-import { INTRO, MILESTONES, RANDOM_MESSAGES, RARE_FINDS, SENDER, TV_ADS } from '../data/messages';
-import { DEFAULT_LOADOUT, ModuleSlot } from '../data/modules';
+import { CONTRACT_LINES, INTRO, MAE, MILESTONES, RANDOM_MESSAGES, RARE_FINDS, SENDER, STORY, STORY_SENDER, TV_ADS } from '../data/messages';
+import { Contract, ContractBoard, ContractHost, DAY } from './Contracts';
+import { DEFAULT_LOADOUT, MODULE_MAP, ModuleSlot } from '../data/modules';
 import { TOOLS } from '../data/tools';
 import { UPGRADES, UPGRADE_MAP, upgradeCost } from '../data/upgrades';
 import { World } from '../world/World';
@@ -30,7 +31,9 @@ export type GameEvent =
   | { type: 'openInventory' }
   | { type: 'openMachine'; id: number }
   | { type: 'offline'; seconds: number; removed: number }
-  | { type: 'changed' };
+  | { type: 'changed' }
+  | { type: 'contract'; ok: boolean; title: string; money: number; blueprint: string | null }
+  | { type: 'offers' };
 
 export interface SpecialState { revealed: boolean; opened: boolean; progress: number }
 
@@ -72,6 +75,15 @@ export class Game {
   blueprints: string[] = [];
   /** seconds left of the orbital shuttle visiting the depot (0 = away) */
   shuttleT = 0;
+  contracts = new ContractBoard();
+  /** next STORY beat to tell */
+  storyStep = 0;
+  private teleportT = 0;
+  private contractT = 0;
+  private warned = new Set<number>();
+  readonly contractHost: ContractHost = {
+    get playTime() { return 0; }, get ratePerSec() { return 0; }, get value() { return [] as number[]; }, get blueprints() { return [] as string[]; },
+  };
   upgrades: Record<string, number> = {};
   flags: Record<string, boolean> = {};
   specials: SpecialState[];
@@ -124,7 +136,24 @@ export class Game {
     this.specials = this.world.specials.map(() => ({ revealed: false, opened: false, progress: 0 }));
     this.depot = this.machines.create('depot', DEPOT.tx, DEPOT.ty);
     this.lastRemaining = this.world.remaining;
+    const g = this;
+    (this as { contractHost: ContractHost }).contractHost = {
+      get playTime() { return g.stats.playTime; },
+      get ratePerSec() { return g.avgRate; },
+      get value() { return g.d.value; },
+      get blueprints() { return g.blueprints; },
+    };
   }
+
+  /** removal rate averaged over the last minute (contract sizing) */
+  get avgRate() {
+    const h = this.rateHistory;
+    return h.length ? h.reduce((a, b) => a + b, 0) / h.length : 0;
+  }
+
+  /** planet day (1-based) and hour */
+  get day() { return Math.floor(this.stats.playTime / DAY) + 1; }
+  get hour() { return ((this.stats.playTime % DAY) / DAY) * 24; }
 
   get tool() { return TOOLS[this.toolTier]; }
   get remaining() { return this.world.remaining; }
@@ -236,6 +265,9 @@ export class Game {
       const c = this.machineCost(t);
       for (let k = 0; k < MAT_COUNT; k++) r[k] = Math.max(r[k], c.mats[k]);
     }
+    // contracts in progress come first
+    const need = this.contracts.needs();
+    for (let k = 0; k < MAT_COUNT; k++) r[k] += need[k];
     return r;
   }
 
@@ -278,7 +310,7 @@ export class Game {
 
   missingFor(cost: { money: number; mats: number[] }): string | null {
     if (this.money < cost.money) return 'Dinheiro insuficiente';
-    for (let k = 0; k < MAT_COUNT; k++) if (this.storage[k] < cost.mats[k]) return `Faltam ${Math.ceil(cost.mats[k] - this.storage[k])} de ${MATERIALS[k].name} no depósito`;
+    for (let k = 0; k < MAT_COUNT; k++) if (this.storage[k] < cost.mats[k]) return `Faltam ${Math.ceil(cost.mats[k] - this.storage[k])} de ${MATERIALS[k].name} no posto`;
     return null;
   }
 
@@ -297,13 +329,13 @@ export class Game {
     const size = MACHINES[type].size;
     if (MACHINES[type].needsService) {
       const inS = this.machines.hubs().some((h) => Math.hypot(centerX(h) - tx - size / 2, centerY(h) - ty - size / 2) <= hubRadius(h, this.d));
-      if (!inS) return 'Precisa ficar dentro do círculo de um depósito';
+      if (!inS) return 'Precisa ficar dentro do círculo de um posto';
     }
     for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) {
       const ax = tx + x, ay = ty + y;
       if (!inWorld(ax, ay)) return 'Fora do terreno';
       const i = tileIndex(ax, ay);
-      if (this.world.garbage[i] > 0) return `Ainda há lixo aqui (${this.world.garbage[i]})`;
+      if (this.world.garbage[i] > 0) return `Ainda há sucata aqui (${this.world.garbage[i]})`;
       if (this.world.occupant[i] >= 0) return 'Espaço ocupado';
       if (this.world.specialAt[i] >= 0) return 'Há um objeto especial aqui';
       if (ax === CENTER - 4 && (ay === CENTER + 1 || ay === CENTER + 2)) return 'O Sr. Valdemar está sentado aí';
@@ -311,7 +343,7 @@ export class Game {
         for (const h of this.machines.machines) {
           if (!isHub(h.type)) continue;
           const hs = MACHINES[h.type].size;
-          if (ax >= h.tx - 1 && ay >= h.ty - 1 && ax <= h.tx + hs && ay <= h.ty + hs + 1) return 'Deixe um corredor livre ao redor do depósito';
+          if (ax >= h.tx - 1 && ay >= h.ty - 1 && ax <= h.tx + hs && ay <= h.ty + hs + 1) return 'Deixe um corredor livre ao redor do posto';
         }
       }
       const p = this.player;
@@ -347,7 +379,7 @@ export class Game {
     this.fx.burst((tx + s / 2) * TILE, (ty + s / 2) * TILE, 'build', type === 'conveyor' ? 4 : 18);
     this.fx.sound('build', (tx + s / 2) * TILE, (ty + s / 2) * TILE);
     if (this.stats.built === 1) this.notify('Sua primeira máquina! Ela trabalha mesmo quando você não está olhando. Diferente de certos funcionários.');
-    if (type === 'conveyor' && this.machines.count('conveyor') === 1) this.notify('Esteiras levam materiais das máquinas até o depósito. A seta mostra a direção. Tecla R gira.');
+    if (type === 'conveyor' && this.machines.count('conveyor') === 1) this.notify('Esteiras levam materiais das máquinas até o posto. A seta mostra a direção. Tecla R gira.');
     return null;
   }
 
@@ -453,7 +485,7 @@ export class Game {
   connectToDepot(m: Machine): string | null {
     if (!this.isUnlocked('conveyor')) return 'Desbloqueie Logística na árvore';
     const plan = this.planConnection(m);
-    if (!plan) return 'Sem caminho limpo até o depósito: limpe o terreno no meio';
+    if (!plan) return 'Sem caminho limpo até o posto: limpe o terreno no meio';
     const miss = this.missingFor(plan.cost);
     if (miss) { this.fx.sound('error'); return miss; }
     this.pay(plan.cost);
@@ -601,6 +633,115 @@ export class Game {
     return Math.ceil(t.cost * (t.id === 'advanced' && this.flags.alien ? 0.4 : 1));
   }
 
+  // ------------------------------------------------------------------ modules
+  moduleState(id: string): 'equipped' | 'owned' | 'buy' | 'locked' {
+    const m = MODULE_MAP[id];
+    if (this.loadout[m.slot] === id) return 'equipped';
+    if (this.ownedModules.includes(id)) return 'owned';
+    return m.blueprint && !this.blueprints.includes(id) ? 'locked' : 'buy';
+  }
+
+  buyModule(id: string): string | null {
+    const m = MODULE_MAP[id];
+    if (!m || this.moduleState(id) !== 'buy') return 'Indisponível';
+    const miss = this.missingFor({ money: m.money, mats: m.mats });
+    if (miss) { this.fx.sound('error'); return miss; }
+    this.money -= m.money;
+    for (let k = 0; k < MAT_COUNT; k++) this.storage[k] -= m.mats[k];
+    this.ownedModules.push(id);
+    this.equipModule(id);
+    this.fx.sound('unlock');
+    this.fx.burst(this.player.x, this.player.y - 10, 'unlock', 30);
+    return null;
+  }
+
+  equipModule(id: string) {
+    const m = MODULE_MAP[id];
+    if (!m || !this.ownedModules.includes(id)) return;
+    this.loadout[m.slot] = id;
+    this.recompute();
+    this.player.carried = Math.min(this.player.carried, this.d.capacity);
+    this.fx.sound('build');
+    this.fx.burst(this.player.x, this.player.y - 6, 'dust', 14);
+  }
+
+  // ------------------------------------------------------------------ contracts
+  acceptContract(id: number): string | null {
+    const e = this.contracts.accept(id, this.contractHost);
+    if (e) { this.fx.sound('error'); return e; }
+    this.fx.sound('buy');
+    const c = this.contracts.list.find((x) => x.id === id);
+    if (c && this.contracts.canFinish(c, this.storage)) this.finishContract(c);
+    return null;
+  }
+
+  /** Partial delivery from the silos. */
+  deliverContract(id: number): number {
+    const c = this.contracts.list.find((x) => x.id === id && x.state === 'active');
+    if (!c) return 0;
+    const n = this.contracts.deliver(c, this.storage);
+    if (n > 0) this.fx.sound('unload');
+    if (this.contracts.isDone(c)) this.completeContract(c);
+    return n;
+  }
+
+  private finishContract(c: Contract) {
+    this.contracts.deliver(c, this.storage);
+    this.completeContract(c);
+  }
+
+  private completeContract(c: Contract) {
+    const cb = this.contracts;
+    cb.remove(c);
+    cb.completed++;
+    // punctuality bonus: more than half of the time left
+    const early = c.deadline - this.stats.playTime > (c.days * DAY) / 2;
+    cb.rep += c.rep + (early ? 1 : 0);
+    this.earn(c.money);
+    if (c.blueprint && !this.blueprints.includes(c.blueprint)) this.blueprints.push(c.blueprint);
+    this.shuttleT = 6;
+    this.fx.sound('win');
+    this.events.push({ type: 'contract', ok: true, title: c.title, money: c.money, blueprint: c.blueprint });
+    this.notify(CONTRACT_LINES.done[Math.floor(Math.random() * CONTRACT_LINES.done.length)] + (early ? ' Bônus de pontualidade: +1 reputação.' : ''), MAE);
+    this.events.push({ type: 'changed' });
+  }
+
+  private failContract(c: Contract) {
+    const cb = this.contracts;
+    cb.remove(c);
+    cb.failed++;
+    cb.rep = Math.max(0, cb.rep - 1);
+    const pay = Math.round(c.money * cb.progress(c) * 0.4);
+    if (pay > 0) this.earn(pay);
+    this.events.push({ type: 'contract', ok: false, title: c.title, money: pay, blueprint: null });
+    this.notify(CONTRACT_LINES.failed[Math.floor(Math.random() * CONTRACT_LINES.failed.length)] + (pay > 0 ? ` Pagamento parcial: $${pay}.` : ''), MAE);
+  }
+
+  private updateContracts(dt: number) {
+    if (this.shuttleT > 0) this.shuttleT = Math.max(0, this.shuttleT - dt);
+    this.contractT -= dt;
+    if (this.contractT > 0) return;
+    this.contractT = 0.5;
+    const cb = this.contracts;
+    const now = this.stats.playTime;
+    if (!cb.started) {
+      if (now > 40) cb.tutorial(this.contractHost);
+      else return;
+    }
+    // story beats
+    while (this.storyStep < STORY.length && STORY[this.storyStep].at <= cb.completed) {
+      const b = STORY[this.storyStep++];
+      this.notify(b.text, STORY_SENDER[b.from]);
+    }
+    if (cb.completed >= 1 && cb.refreshOffers(this.contractHost)) this.events.push({ type: 'offers' });
+    for (const c of cb.active) {
+      if (cb.canFinish(c, this.storage)) { this.finishContract(c); continue; }
+      const left = c.deadline - now;
+      if (left <= 0) { this.failContract(c); continue; }
+      if (left < DAY / 2 && !this.warned.has(c.id)) { this.warned.add(c.id); this.notify(CONTRACT_LINES.urgent, MAE); }
+    }
+  }
+
   buyTool(tier: number): string | null {
     if (tier !== this.toolTier + 1 || tier >= TOOLS.length) return 'Indisponível';
     const c = this.toolCost(tier);
@@ -611,7 +752,7 @@ export class Game {
     this.fx.sound('unlock');
     this.fx.burst(this.player.x, this.player.y - 10, 'unlock', 30);
     this.fx.shake(4);
-    this.notify(`Nova ferramenta: ${TOOLS[tier].name}! ${TOOLS[tier].mode === 'area' ? 'Ela coleta em área: segure o botão e passeie pelo lixo.' : ''}`);
+    this.notify(`Nova ferramenta: ${TOOLS[tier].name}! ${TOOLS[tier].mode === 'area' ? 'Ela coleta em área: segure o botão e passeie pela sucata.' : ''}`);
     return null;
   }
 
@@ -654,6 +795,8 @@ export class Game {
     this.updateInteract(dt, input);
     this.updateDiscoveries(dt);
     this.updateMeta(dt);
+    this.updateContracts(dt);
+    this.updateTeleport(dt);
   }
 
   /** Background-only simulation (offline progress or tests). */
@@ -785,7 +928,7 @@ export class Game {
       if (p.fullWarnT <= 0) {
         p.fullWarnT = 2.5;
         this.fx.sound('full');
-        this.fx.text(p.x, p.y - 34, 'Mochila cheia!', '#ff8a65');
+        this.fx.text(p.x, p.y - 34, 'Tanque cheio!', '#ff8a65');
       }
       return 0;
     }
@@ -1005,7 +1148,7 @@ export class Game {
       return;
     }
     if (hub) {
-      this.context = { kind: 'depot', label: 'Depósito: vender / inventário' };
+      this.context = { kind: 'depot', label: 'Posto: descarregar / silos' };
       if (pressed) this.events.push({ type: 'openInventory' });
     }
   }
@@ -1055,7 +1198,7 @@ export class Game {
         this.fx.sound('discover');
       }
       if (def.openTime === 0) this.openSpecial(s, offline);
-      else this.notify(`Algo apareceu sob o lixo: ${def.name}! Chegue perto e segure INTERAGIR (E) para abrir.`, 'Detector de Curiosidades');
+      else this.notify(`Algo apareceu sob a sucata: ${def.name}! Chegue perto e segure INTERAGIR (E) para abrir.`, 'Detector de Curiosidades');
     }
   }
 
@@ -1091,6 +1234,21 @@ export class Game {
     this.events.push({ type: 'discovery', special: s });
   }
 
+  /** Quantum tank: the backpack jumps to the depot on its own. */
+  private updateTeleport(dt: number) {
+    const p = this.player;
+    if (this.d.teleport <= 0) { this.teleportT = 0; return; }
+    this.teleportT += dt;
+    if (this.teleportT < this.d.teleport || p.carried < 1) return;
+    this.teleportT = 0;
+    const out = p.backpack.slice();
+    p.backpack.fill(0);
+    p.carried = 0;
+    this.deliver(out, 0, -1, -1, true);
+    this.fx.burst(p.x, p.y - 12, 'unlock', 18);
+    this.fx.sound('drone');
+  }
+
   private updateMeta(dt: number) {
     // rate tracking
     const removedNow = this.lastRemaining - this.world.remaining;
@@ -1109,7 +1267,7 @@ export class Game {
       this.randomMsgT -= 1;
       if (this.randomMsgT <= 0) {
         this.randomMsgT = 150 + Math.random() * 120;
-        if (this.flags.tvAds && Math.random() < 0.5) this.notify(TV_ADS[Math.floor(Math.random() * TV_ADS.length)], 'TV Achada no Lixo');
+        if (this.flags.tvAds && Math.random() < 0.5) this.notify(TV_ADS[Math.floor(Math.random() * TV_ADS.length)], 'Rádio Pirata');
         else this.notify(RANDOM_MESSAGES[Math.floor(Math.random() * RANDOM_MESSAGES.length)]);
       }
     }
@@ -1174,9 +1332,9 @@ export class Game {
 
   /** cost to drive progress UI */
   nextGoal(): string {
-    if (this.toolTier === 0 && this.money < 60) return 'Colete lixo e descarregue no depósito para ganhar dinheiro.';
-    if (this.toolTier === 0) return 'Compre a Pá Improvisada no menu Ferramentas.';
-    if (this.machines.count('collector') === 0) return 'Construa seu primeiro Coletor Automático (menu Construir).';
+    if (this.toolTier === 0 && this.money < 60) return 'Colete sucata e descarregue no posto para ganhar dinheiro.';
+    if (this.toolTier === 0) return 'Compre a Pá Telescópica na Oficina.';
+    if (this.machines.count('collector') === 0) return 'Construa seu primeiro Coletor (menu Construir).';
     return '';
   }
 

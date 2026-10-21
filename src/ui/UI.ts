@@ -3,27 +3,29 @@ import { fmtInt, fmtMoney, fmtPct, fmtShort, fmtTime } from '../core/format';
 import { DISCOVERIES } from '../data/discoveries';
 import { BUILD_ORDER, MACHINES, MAX_MACHINE_LEVEL, MachineRole, MachineType, machineUpgradeCost } from '../data/machines';
 import { MATERIALS, MAT_COUNT } from '../data/materials';
-import { ENDING, SENDER } from '../data/messages';
+import { ENDING, MAE, SENDER } from '../data/messages';
+import { MODULES, MODULE_MAP, SLOT_NAMES, ModuleSlot } from '../data/modules';
+import { DAY } from '../game/Contracts';
 import { G_ASPHALT, G_CONCRETE, G_EARTH, G_GRAVEL, G_RUINFLOOR } from '../data/regions';
 import { TOOLS } from '../data/tools';
 import { UPGRADES, UPGRADE_MAP } from '../data/upgrades';
 import { Game, GameEvent } from '../game/Game';
 import { Machine, botCount, centerX, centerY, hubRadius, isBelt, isHub, machineBufferCap, machineRadius, machineRate } from '../game/Machines';
-import { drawTool } from '../render/character';
+import { drawTool, drawWorker } from '../render/character';
 import { drawBelt, drawMachine } from '../render/machinesDraw';
 import { drawDiscovery } from '../render/specialsDraw';
 import { ICONS } from './icons';
 import { SkillTree } from './SkillTree';
 import type { App } from '../main';
 
-type Tab = 'upgrades' | 'build' | 'tools' | 'inventory' | 'map' | 'stats' | 'settings';
+type Tab = 'contracts' | 'upgrades' | 'build' | 'tools' | 'inventory' | 'map' | 'stats' | 'settings';
 const TABS: { id: Tab; name: string; short: string; icon: string }[] = [
-  { id: 'upgrades', name: 'Árvore de Melhorias', short: 'Melhorias', icon: ICONS.upgrades },
+  { id: 'contracts', name: 'Contratos da MÃE', short: 'Contratos', icon: ICONS.contracts },
   { id: 'build', name: 'Construir Máquinas', short: 'Construir', icon: ICONS.build },
-  { id: 'tools', name: 'Ferramentas', short: 'Ferram.', icon: ICONS.tools },
-  { id: 'inventory', name: 'Depósito', short: 'Depósito', icon: ICONS.inventory },
-  { id: 'map', name: 'Mapa do Reino', short: 'Mapa', icon: ICONS.map },
-  { id: 'stats', name: 'Estatísticas', short: 'Números', icon: ICONS.stats },
+  { id: 'tools', name: 'Oficina do BIP', short: 'Oficina', icon: ICONS.workshop },
+  { id: 'upgrades', name: 'Árvore de Melhorias', short: 'Melhorias', icon: ICONS.upgrades },
+  { id: 'inventory', name: 'Silos do Posto', short: 'Silos', icon: ICONS.inventory },
+  { id: 'map', name: 'Mapa de Nébula-7', short: 'Mapa', icon: ICONS.map },
   { id: 'settings', name: 'Opções', short: 'Opções', icon: ICONS.settings },
 ];
 
@@ -59,17 +61,18 @@ export class UI {
   private buildHud() {
     const r = this.root;
     r.innerHTML = '';
-    const counter = h(`<div class="hud-counter pe"><div class="lbl">LIXO RESTANTE</div><div class="num">1.000.000</div><div class="bar"><i></i></div><div class="sub"><span>removido <b class="rm">0</b></span><span><b class="pc">0%</b></span><span><b class="ps">0</b>/s</span><span class="desk-only"><b class="pm">0</b>/min</span><span>⚙ <b class="mc">0</b></span></div></div>`);
+    const counter = h(`<div class="hud-counter pe"><div class="lbl">SUCATA RESTANTE</div><div class="num">1.000.000</div><div class="bar"><i></i></div><div class="sub"><span>removido <b class="rm">0</b></span><span><b class="pc">0%</b></span><span><b class="ps">0</b>/s</span><span class="desk-only"><b class="pm">0</b>/min</span><span>⚙ <b class="mc">0</b></span></div></div>`);
     r.appendChild(counter);
     this.el.counter = counter;
     const left = h(`<div class="hud-left">
       <div class="chip money pe">${ICONS.coin.replace('<svg', '<svg class="ico"')}<span class="mv">$0</span><span class="rate"></span></div>
-      <div class="chip bag pe"><div class="row"><span>${ICONS.bag.replace('<svg', '<svg style="width:16px;height:16px;vertical-align:-3px"')} Mochila</span><span class="bv">0/20</span></div><div class="bar"><i></i></div></div>
-      <div class="chip toolchip pe"><span class="tn">Pinças de Fábrica</span><small class="tl">1/7</small></div>
-      <div class="chip yard pe" style="display:none" title="Pátio do depósito: o que as máquinas entregam espera aqui para ser processado"><div class="row"><span>⚙ Pátio</span><span class="yv">0/250</span></div><div class="bar"><i></i></div></div>
+      <div class="chip bag pe"><div class="row"><span>${ICONS.bag.replace('<svg', '<svg style="width:16px;height:16px;vertical-align:-3px"')} Tanque</span><span class="bv">0/20</span></div><div class="bar"><i></i></div></div>
+      <div class="chip contract pe" style="display:none"><div class="row"><span class="ct">📦 Contrato</span><span class="cd"></span></div><div class="cr"></div><div class="bar"><i></i></div></div>
+      <div class="chip yard pe" style="display:none" title="Pátio do posto: o que as máquinas entregam espera aqui para ser processado"><div class="row"><span>⚙ Pátio</span><span class="yv">0/250</span></div><div class="bar"><i></i></div></div>
     </div>`);
     r.appendChild(left);
     this.el.left = left;
+    left.querySelector('.contract')!.addEventListener('click', () => this.openModal('contracts'));
     const right = h(`<div class="hud-right"></div>`);
     for (const t of TABS) {
       const b = h(`<button class="mbtn" data-tab="${t.id}">${t.icon}<span class="tip">${t.name}</span><span class="dot"></span></button>`);
@@ -136,7 +139,7 @@ export class UI {
       L.querySelector('.bv')!.textContent = `${fmtInt(p.carried)}/${fmtInt(g.d.capacity)}`;
       (L.querySelector('.bag .bar i') as HTMLElement).style.width = (100 * p.carried) / g.d.capacity + '%';
       L.querySelector('.bag')!.classList.toggle('full', p.carried >= g.d.capacity);
-      L.querySelector('.tn')!.textContent = g.tool.name;
+      this.updateContractChip();
       const yc = L.querySelector('.yard') as HTMLElement;
       const hasAuto = g.machines.machines.some((m) => MACHINES[m.type].buffer > 0 || g.yardTotal > 0);
       yc.style.display = hasAuto ? '' : 'none';
@@ -148,11 +151,11 @@ export class UI {
         yc.classList.toggle('full', yf >= 0.98);
         yc.classList.toggle('warn', yf >= 0.7 && yf < 0.98);
       }
-      L.querySelector('.tl')!.textContent = `${g.toolTier + 1}/${TOOLS.length}`;
       this.el.goal.textContent = this.app.build ? '' : g.nextGoal();
       // notification dots
       const canUp = UPGRADES.some((u) => !g.canBuyUpgrade(u.id));
-      const canTool = g.toolTier + 1 < TOOLS.length && g.money >= g.toolCost(g.toolTier + 1);
+      const canTool = (g.toolTier + 1 < TOOLS.length && g.money >= g.toolCost(g.toolTier + 1)) || MODULES.some((m) => g.moduleState(m.id) === 'buy' && !g.missingFor({ money: m.money, mats: m.mats }));
+      this.el.right.querySelector('[data-tab=contracts]')!.classList.toggle('has', this.newOffers || g.contracts.active.some((c) => g.contracts.canFinish(c, g.storage)));
       const canBuild = BUILD_ORDER.some((t) => g.isUnlocked(t) && t !== 'conveyor' && !g.missingFor(g.machineCost(t)));
       this.el.right.querySelector('[data-tab=upgrades]')!.classList.toggle('has', canUp);
       this.el.right.querySelector('[data-tab=tools]')!.classList.toggle('has', canTool);
@@ -185,6 +188,8 @@ export class UI {
       case 'message': this.message(e.text, e.from); if (e.from === SENDER) this.app.renderer.life.say(e.text); break;
       case 'discovery': this.discoveryPopup(e.special); break;
       case 'openInventory': this.openModal('inventory'); break;
+      case 'offers': this.newOffers = true; if (this.modalTab === 'contracts') this.renderModal(true); else this.message('Novas propostas de contrato chegaram. Toque em Contratos.', MAE); break;
+      case 'contract': this.contractBanner(e.ok, e.title, e.money, e.blueprint); if (this.modalTab === 'contracts') this.renderModal(true); break;
       case 'openMachine': this.select(this.game.machines.byId.get(e.id) ?? null); break;
       case 'ending': this.endingPopup(); break;
       case 'offline': this.offlinePopup(e.seconds, e.removed); break;
@@ -291,13 +296,13 @@ export class UI {
     const msg = bar.querySelector('.bb-msg') as HTMLElement | null;
     let tip = '', chip = '', cls = 'good';
     if (b.problem) { tip = '⚠ ' + b.problem; cls = 'bad'; }
-    else if (belt) { tip = 'Leva o material até o depósito'; chip = '✓'; }
+    else if (belt) { tip = 'Leva o material até o posto'; chip = '✓'; }
     else {
       const inService = g.inServiceArea(b.type, b.tx, b.ty);
-      const reach = def.role === 'coleta' ? (b.reach > 0 ? `alcança ${fmtShort(b.reach)} de lixo${def.heavy ? '' : ' leve'}` : 'nenhum lixo ao alcance') : '';
-      if (def.role === 'coleta' && b.reach === 0) { cls = 'warn'; tip = '⚠ Nenhum lixo ao alcance aqui'; chip = '0'; }
-      else if (!inService && b.type !== 'recycler') { cls = 'warn'; tip = `${reach ? reach + ' · ' : ''}fora do depósito: depois use 🔗 Conectar`; chip = reach ? fmtShort(b.reach) : '!'; }
-      else { tip = `✓ ${reach ? reach + ' · ' : ''}entrega sozinha no depósito`; chip = reach ? '✓ ' + fmtShort(b.reach) : '✓'; }
+      const reach = def.role === 'coleta' ? (b.reach > 0 ? `alcança ${fmtShort(b.reach)} de sucata${def.heavy ? '' : ' leve'}` : 'nenhuma sucata ao alcance') : '';
+      if (def.role === 'coleta' && b.reach === 0) { cls = 'warn'; tip = '⚠ Nenhuma sucata ao alcance aqui'; chip = '0'; }
+      else if (!inService && b.type !== 'recycler') { cls = 'warn'; tip = `${reach ? reach + ' · ' : ''}fora do posto: depois use 🔗 Conectar`; chip = reach ? fmtShort(b.reach) : '!'; }
+      else { tip = `✓ ${reach ? reach + ' · ' : ''}entrega sozinha no posto`; chip = reach ? '✓ ' + fmtShort(b.reach) : '✓'; }
     }
     if (msg) { msg.textContent = tip; msg.className = 'bb-msg ' + cls; }
     if (this.ghostChip) { this.ghostChip.textContent = chip; this.ghostChip.className = 'ghost-chip ' + cls; }
@@ -332,18 +337,18 @@ export class UI {
     let status = '', cls = 'ok';
     const yardFull = g.yardSpace() <= 0;
     if (isHub(m.type)) {
-      status = yardFull ? 'Pátio lotado! Máquinas esperando. Construa um Triturador dentro do círculo.' : g.yardTotal > g.yardCap() * 0.7 ? 'Pátio quase cheio: um Triturador ajudaria.' : 'Processando normalmente.';
+      status = yardFull ? 'Pátio lotado! Máquinas esperando. Construa uma Prensa dentro do círculo.' : g.yardTotal > g.yardCap() * 0.7 ? 'Pátio quase cheio: um Triturador ajudaria.' : 'Processando normalmente.';
       cls = yardFull ? 'bad' : g.yardTotal > g.yardCap() * 0.7 ? 'warn' : 'ok';
     } else if (m.type === 'crusher') { status = m.status === 'working' ? 'Triturando a fila do pátio' : 'Pátio vazio, aguardando material'; cls = m.status === 'working' ? 'ok' : 'warn'; }
-    else if (isBelt(m.type)) { status = m.linked ? 'Conectada a um depósito ✓' : 'Não chega a um depósito: siga até o depósito'; cls = m.linked ? 'ok' : 'bad'; }
-    else if (m.type === 'ancient') status = 'Entrega direta no depósito (mistério)';
-    else if (m.status === 'full' && m.inService && yardFull) { status = 'Parada: o pátio do depósito está lotado. Construa um Triturador.'; cls = 'bad'; }
-    else if (m.status === 'full') { status = 'Caçamba cheia! Conecte ao depósito ou esvazie.'; cls = 'bad'; }
-    else if (m.status === 'idle') { status = (def.heavy ? 'Área limpa! ' : 'Só sobrou entulho pesado (ou nada) no alcance. ') + 'Use ↔ Mover para levá-la a uma área com lixo.'; cls = 'warn'; }
+    else if (isBelt(m.type)) { status = m.linked ? 'Conectada a um posto ✓' : 'Não chega a um posto: siga até o posto'; cls = m.linked ? 'ok' : 'bad'; }
+    else if (m.type === 'ancient') status = 'Entrega direta no posto (mistério)';
+    else if (m.status === 'full' && m.inService && yardFull) { status = 'Parada: o pátio do posto está lotado. Construa uma Prensa.'; cls = 'bad'; }
+    else if (m.status === 'full') { status = 'Caçamba cheia! Conecte ao posto ou esvazie.'; cls = 'bad'; }
+    else if (m.status === 'idle') { status = (def.heavy ? 'Área limpa! ' : 'Só sobrou sucata pesada (ou nada) no alcance. ') + 'Use ↔ Mover para levá-la a uma área com lixo.'; cls = 'warn'; }
     else status = 'Trabalhando';
     let delivery = '';
     if (!isHub(m.type) && !isBelt(m.type) && m.type !== 'ancient') {
-      delivery = m.inService ? 'Área de serviço do depósito ✓' : m.outConveyor >= 0 ? (m.linked ? 'Esteira conectada ✓' : 'Esteira não chega ao depósito ✗') : 'Sem entrega automática ✗';
+      delivery = m.inService ? 'Área de serviço do posto ✓' : m.outConveyor >= 0 ? (m.linked ? 'Esteira conectada ✓' : 'Esteira não chega ao posto ✗') : 'Sem entrega automática ✗';
     }
     const canUp = MACHINES[m.type].buildable && m.type !== 'conveyor' && m.level < MAX_MACHINE_LEVEL;
     const upCost = Math.ceil(machineUpgradeCost(m.type, m.level) * d.costMult);
@@ -366,9 +371,9 @@ export class UI {
     if (delivery) kv.push(`<span>Entrega</span><span>${delivery}</span>`);
     if (isBelt(m.type)) kv.push(`<span>Pacotes</span><span>${m.belt.length}</span>`);
     const head = `<b>${def.name}</b>${def.buildable && m.type !== 'conveyor' ? `<span class="lvl">Nv ${m.level}/${MAX_MACHINE_LEVEL}</span>` : ''}<button class="close" data-a="x" style="width:32px;height:32px">✕</button>`;
-    const acts = `${needsLink ? (plan ? `<button class="btn ${g.missingFor(plan.cost) ? 'disabled' : ''} wide" data-a="link">🔗 Conectar ao depósito · ${plan.tiles.length} esteiras · ${fmtMoney(plan.cost.money)}</button>` : `<div class="st bad wide">${g.isUnlocked('conveyor') ? 'Sem caminho limpo até o depósito: limpe o lixo entre eles' : 'Para entregar de longe, desbloqueie Logística (esteiras)'}</div>`) : ''}
+    const acts = `${needsLink ? (plan ? `<button class="btn ${g.missingFor(plan.cost) ? 'disabled' : ''} wide" data-a="link">🔗 Conectar ao posto · ${plan.tiles.length} esteiras · ${fmtMoney(plan.cost.money)}</button>` : `<div class="st bad wide">${g.isUnlocked('conveyor') ? 'Sem caminho limpo até o posto: limpe o lixo entre eles' : 'Para entregar de longe, desbloqueie Logística (esteiras)'}</div>`) : ''}
         ${canUp ? `<button class="btn ${g.money < upCost ? 'disabled' : 'green'}" data-a="up">Melhorar ${fmtMoney(upCost)}</button>` : ''}
-        ${m.bufferTotal > 0 ? `<button class="btn ${near ? '' : 'disabled'}" data-a="empty" title="Chegue perto">Esvaziar na mochila</button>` : ''}
+        ${m.bufferTotal > 0 ? `<button class="btn ${near ? '' : 'disabled'}" data-a="empty" title="Chegue perto">Esvaziar no tanque</button>` : ''}
         ${isBelt(m.type) ? `<button class="btn ghost" data-a="rot">↻ Girar</button>` : ''}
         ${def.buildable && !isBelt(m.type) ? `<button class="btn ghost" data-a="move">↔ Mover</button>` : ''}
         ${def.buildable ? `<button class="btn red" data-a="del">Demolir</button>` : ''}`;
@@ -401,7 +406,7 @@ export class UI {
       case 'rot': m.dir = (m.dir + 1) % 4; g.machines.linksDirty = true; this.app.audio.play('click'); break;
       case 'del': g.demolish(m); this.select(null); break;
       case 'move': this.app.startMove(m); break;
-      case 'link': { const e = g.connectToDepot(m); if (e) { this.app.audio.play('error'); this.toastErr(e); } else this.message('Esteiras construídas! Os materiais agora vão sozinhos até o depósito.', 'Sistema'); break; }
+      case 'link': { const e = g.connectToDepot(m); if (e) { this.app.audio.play('error'); this.toastErr(e); } else this.message('Esteiras construídas! Os materiais agora vão sozinhos até o posto.', 'Sistema'); break; }
     }
     this.mpanelT = 0;
   }
@@ -429,7 +434,7 @@ export class UI {
       document.body.classList.add('modal-open');
     }
     this.modalTab = tab;
-    const t = TABS.find((x) => x.id === tab)!;
+    const t = TABS.find((x) => x.id === tab) ?? { id: tab, name: 'Números', short: 'Números', icon: ICONS.stats };
     const nav = this.modalEl.querySelector('.modal-nav')!;
     nav.innerHTML = TABS.map((x) => `<button class="nav ${x.id === tab ? 'on' : ''}" data-tab="${x.id}">${x.icon}<span>${x.short}</span></button>`).join('');
     nav.querySelectorAll('.nav').forEach((b) => b.addEventListener('click', () => { this.app.audio.play('click'); this.openModal((b as HTMLElement).dataset.tab as Tab); }));
@@ -458,6 +463,7 @@ export class UI {
       case 'upgrades': this.renderUpgrades(body, full); break;
       case 'build': this.renderBuild(body); break;
       case 'tools': this.renderTools(body); break;
+      case 'contracts': this.renderContracts(body); break;
       case 'inventory': this.renderInventory(body); break;
       case 'map': if (full) this.renderMap(body); else this.drawBigMap(); break;
       case 'stats': this.renderStats(body); break;
@@ -528,10 +534,10 @@ export class UI {
     const g = this.game;
     const yardPct = Math.min(100, (g.yardTotal / Math.max(1, g.yardCap())) * 100);
     let html = `<div class="bhead"><div class="flow"><span class="fs coleta">① Coletar</span><i>→</i><span class="fs logistica">② Levar</span><i>→</i><span class="fs processamento">③ Processar</span></div>
-      <div class="yardbar"><span>Pátio do depósito</span><b>${fmtInt(g.yardTotal)} / ${fmtInt(g.yardCap())}</b><span>· ${fmtShort(g.processRate())}/s</span><div class="yb"><i style="width:${yardPct}%"></i></div></div></div>`;
+      <div class="yardbar"><span>Pátio do posto</span><b>${fmtInt(g.yardTotal)} / ${fmtInt(g.yardCap())}</b><span>· ${fmtShort(g.processRate())}/s</span><div class="yb"><i style="width:${yardPct}%"></i></div></div></div>`;
     const roles: MachineRole[] = ['coleta', 'logistica', 'processamento', 'deposito'];
-    const roleShort: Record<MachineRole, string> = { coleta: 'Coleta', logistica: 'Logística', processamento: 'Processamento', deposito: 'Depósitos' };
-    const roleSub: Record<MachineRole, string> = { coleta: 'tiram o lixo do chão', logistica: 'levam até o depósito', processamento: 'o depósito dar conta', deposito: 'recebem tudo' };
+    const roleShort: Record<MachineRole, string> = { coleta: 'Coleta', logistica: 'Logística', processamento: 'Processamento', deposito: 'Postos' };
+    const roleSub: Record<MachineRole, string> = { coleta: 'tiram a sucata do chão', logistica: 'levam até o posto', processamento: 'o depósito dar conta', deposito: 'recebem tudo' };
     for (const role of roles) {
       const types = BUILD_ORDER.filter((t) => MACHINES[t].role === role);
       if (!types.length) continue;
@@ -603,17 +609,140 @@ export class UI {
     return url;
   }
 
+  // ------------------------------------------------------------------ contracts
+  private newOffers = false;
+
+  private planetTime(sec: number) {
+    sec = Math.max(0, sec);
+    const d = Math.floor(sec / DAY), hh = Math.floor(((sec % DAY) / DAY) * 24);
+    return d > 0 ? `${d}d ${hh}h` : `${hh}h`;
+  }
+
+  private updateContractChip() {
+    const g = this.game;
+    const chip = this.el.left.querySelector('.contract') as HTMLElement;
+    const cb = g.contracts;
+    const act = cb.active.slice().sort((a, b) => a.deadline - b.deadline);
+    const c = act[0];
+    chip.style.display = c ? '' : 'none';
+    if (!c) return;
+    const left = c.deadline - g.stats.playTime;
+    chip.querySelector('.ct')!.textContent = `📦 ${act.length > 1 ? `${act.length} contratos` : 'Contrato'}`;
+    chip.querySelector('.cd')!.textContent = '⏱ ' + this.planetTime(left);
+    const parts: string[] = [];
+    for (let k = 0; k < MAT_COUNT; k++) if (c.req[k] > 0) parts.push(`<span><i class="sw" style="background:${MATERIALS[k].color}"></i>${fmtShort(Math.min(c.req[k], c.delivered[k] + g.storage[k]))}/${fmtShort(c.req[k])}</span>`);
+    const html = parts.join('');
+    const cr = chip.querySelector('.cr') as HTMLElement;
+    if (cr.innerHTML !== html) cr.innerHTML = html;
+    let have = 0, need = 0;
+    for (let k = 0; k < MAT_COUNT; k++) { need += c.req[k]; have += Math.min(c.req[k], c.delivered[k] + g.storage[k]); }
+    (chip.querySelector('.bar i') as HTMLElement).style.width = (need ? (100 * have) / need : 100) + '%';
+    chip.classList.toggle('urgent', left < DAY / 2);
+  }
+
+  private contractBanner(ok: boolean, title: string, money: number, blueprint: string | null) {
+    const b = h(`<div class="cbanner ${ok ? 'ok' : 'bad'}"><div class="k">${ok ? 'CONTRATO CUMPRIDO!' : 'CONTRATO VENCIDO'}</div><div class="t">${esc(title)}</div><div class="r">${money > 0 ? `<span>+${fmtMoney(money)}</span>` : ''}${blueprint ? `<span class="bp">📐 Planta: ${esc(MODULE_MAP[blueprint].name)}</span>` : ''}</div></div>`);
+    this.root.appendChild(b);
+    setTimeout(() => b.classList.add('out'), 3600);
+    setTimeout(() => b.remove(), 4200);
+  }
+
+  private reqRows(req: number[], delivered: number[] | null) {
+    const g = this.game;
+    let html = '';
+    for (let k = 0; k < MAT_COUNT; k++) {
+      if (req[k] <= 0) continue;
+      const m = MATERIALS[k];
+      const done = delivered ? delivered[k] : 0;
+      const silo = Math.min(req[k] - done, Math.floor(g.storage[k]));
+      const pd = (100 * done) / req[k], ps = (100 * Math.max(0, silo)) / req[k];
+      html += `<div class="rq"><i class="matsw" style="background:${m.color}"></i><span class="n">${m.name}</span><span class="q"><b>${fmtInt(done + Math.max(0, silo))}</b>/${fmtInt(req[k])}</span><div class="rb"><i class="d" style="width:${pd}%"></i><i class="s" style="width:${ps}%;left:${pd}%;background:${m.color}"></i></div></div>`;
+    }
+    return html;
+  }
+
+  private renderContracts(body: HTMLElement) {
+    const g = this.game;
+    const cb = g.contracts;
+    this.newOffers = false;
+    const lvl = cb.level;
+    const stars = '★'.repeat(Math.min(10, lvl)) + '☆'.repeat(Math.max(0, 10 - lvl));
+    let html = `<div class="chead"><div class="rep"><span class="lv">Nível ${lvl}</span><span class="stars">${stars}</span><small>Reputação ${cb.rep} · ${cb.completed} entregues${cb.failed ? ` · ${cb.failed} vencidos` : ''}</small></div><div class="clock">🪐 Dia ${g.day} · ${String(Math.floor(g.hour)).padStart(2, '0')}h<small>1 dia = ${DAY / 60} min</small></div></div>`;
+    if (!cb.started) html += `<p class="lead">A MÃE ainda não ligou. Colete um pouco de sucata enquanto isso.</p>`;
+    const act = cb.active;
+    html += `<h3 class="mrole coleta">Em andamento <small>${act.length}/${cb.slots} vagas · entregue automaticamente quando os silos tiverem tudo</small></h3><div class="cgrid">`;
+    if (!act.length && cb.started) html += `<div class="cempty">Nenhum contrato ativo. Aceite uma proposta abaixo.</div>`;
+    for (const c of act) {
+      const left = c.deadline - g.stats.playTime;
+      const partial = c.req.some((n, k) => n > c.delivered[k] && g.storage[k] >= 1);
+      html += `<div class="ccard active ${left < DAY / 2 ? 'urgent' : ''}"><div class="ch"><b>${esc(c.title)}</b><span class="tl">⏱ ${this.planetTime(left)}<small>≈ ${fmtTime(left)}</small></span></div>
+        ${this.reqRows(c.req, c.delivered)}
+        <div class="cf"><span class="rw">${fmtMoney(c.money)} · +${c.rep}★${c.blueprint ? ` · <b class="bp">📐 ${esc(MODULE_MAP[c.blueprint].name)}</b>` : ''}</span>${partial ? `<button class="btn ghost" data-deliver="${c.id}">Entregar parcial</button>` : ''}</div></div>`;
+    }
+    html += `</div>`;
+    const offers = cb.offers;
+    html += `<h3 class="mrole logistica">Propostas de hoje <small>${cb.completed < 1 ? 'chegam depois do contrato de boas-vindas' : 'renovam todo dia'}</small></h3><div class="cgrid">`;
+    for (const c of offers) {
+      const full = act.length >= cb.slots;
+      html += `<div class="ccard offer ${c.blueprint ? 'hasbp' : ''}"><div class="ch"><b>${esc(c.title)}</b><span class="tl">⏱ ${c.days} dia${c.days > 1 ? 's' : ''}<small>≈ ${fmtTime(c.days * DAY)}</small></span></div>
+        ${this.reqRows(c.req, null)}
+        <div class="cf"><span class="rw"><b>${fmtMoney(c.money)}</b> · +${c.rep}★${c.blueprint ? ` · <b class="bp">📐 Planta: ${esc(MODULE_MAP[c.blueprint].name)}</b>` : ''}</span><button class="btn ${full ? 'disabled' : 'green'}" data-accept="${c.id}">${full ? 'Sem vaga' : 'Aceitar'}</button></div></div>`;
+    }
+    if (!offers.length && cb.completed >= 1) html += `<div class="cempty">Sem propostas agora. Novas chegam no próximo dia.</div>`;
+    html += `</div>`;
+    if (!this.put(body, html)) return;
+    body.querySelectorAll('[data-accept]').forEach((b) => b.addEventListener('click', () => {
+      const e = g.acceptContract(Number((b as HTMLElement).dataset.accept));
+      if (e) { this.flash(b); this.message(e, MAE); }
+      this.renderModal(true);
+    }));
+    body.querySelectorAll('[data-deliver]').forEach((b) => b.addEventListener('click', () => {
+      g.deliverContract(Number((b as HTMLElement).dataset.deliver));
+      this.renderModal(true);
+    }));
+  }
+
+  // ------------------------------------------------------------------ workshop
+  private robotPreview(): string {
+    const g = this.game;
+    const key = `bip:${g.toolTier}:${g.loadout.move}:${g.loadout.tank}:${g.loadout.sensor}:${g.upgrades.c_bag || 0}`;
+    let url = this.thumbs.get(key);
+    if (url) return url;
+    const cv = document.createElement('canvas'); cv.width = 240; cv.height = 240;
+    const c = cv.getContext('2d')!;
+    c.translate(120, 150); c.scale(2.6, 2.6);
+    try { drawWorker(c, 0, 0, 0.6, { facing: 'right', moving: false, walk: 0, action: 0, tier: g.toolTier, bagLvl: g.upgrades.c_bag || 0, fill: 0.5, crown: !!g.flags.crown, happy: true, loadout: g.loadout }); } catch { /* art in flux */ }
+    url = cv.toDataURL();
+    this.thumbs.set(key, url);
+    return url;
+  }
+
   private renderTools(body: HTMLElement) {
     const g = this.game;
-    let html = `<p class="lead">Cada ferramenta muda o jeito de coletar. As de área funcionam segurando COLETAR enquanto você anda.</p><div class="grid">`;
+    const d = g.d;
+    let html = `<div class="wtop"><img class="bip" src="${this.robotPreview()}" alt=""/><div class="wstats"><div class="wt">BIP <small>robô modular</small></div>
+      <div class="kvs"><span>Velocidade</span><b>${d.moveSpeed.toFixed(1)}</b><span>Na sucata</span><b>${Math.round((1 - d.garbageSlow) * 100)}%</b><span>Tanque</span><b>${fmtInt(d.capacity)}</b><span>Braço</span><b>${esc(g.tool.name)}</b></div>
+      <p class="muted">Troque as peças quando quiser: cada módulo muda o visual e o jeito de jogar. Plantas 📐 vêm de contratos.</p></div></div>`;
+    for (const slot of ['move', 'tank', 'sensor'] as ModuleSlot[]) {
+      html += `<h3 class="mrole processamento">${SLOT_NAMES[slot]}</h3><div class="wgrid">`;
+      for (const m of MODULES.filter((x) => x.slot === slot)) {
+        const st = g.moduleState(m.id);
+        const miss = st === 'buy' ? g.missingFor({ money: m.money, mats: m.mats }) : null;
+        html += `<div class="wcard ${st}"><div class="wn">${esc(m.name)}${st === 'equipped' ? '<span class="own cur">EM USO</span>' : ''}</div><div class="wd">${esc(m.desc)}</div>
+          <div class="wf">${st === 'equipped' ? '' : st === 'owned' ? `<button class="btn" data-eq="${m.id}">Equipar</button>` : st === 'locked' ? `<span class="lock">📐 Planta vem de contrato</span>` : `<span class="costs">${this.costHtml({ money: m.money, mats: m.mats })}</span><button class="btn ${miss ? 'disabled' : 'green'}" data-mod="${m.id}">Comprar</button>`}</div></div>`;
+      }
+      html += `</div>`;
+    }
+    html += `<h3 class="mrole coleta">Braço <small>as ferramentas de coleta, em ordem</small></h3><div class="grid">`;
     TOOLS.forEach((t, i) => {
       const owned = i <= g.toolTier;
       const next = i === g.toolTier + 1;
+      if (i > g.toolTier + 2) return;
       const cost = g.toolCost(i);
       const stat = t.mode === 'single' ? `<span>${t.units} obj/ação</span><span>alcance ${t.reach} m</span>` : `<span>${t.rate}/s em área</span><span>raio ${t.radius} m</span>`;
-      html += `<div class="card ${owned || next ? '' : 'locked'} ${i === g.toolTier ? 'current' : ''}"><div class="top"><img src="${this.toolThumb(i)}" alt="" style="background:radial-gradient(circle at 50% 40%, ${t.color}55, #2a1f15)"/><div class="info"><div class="t">${i + 1}. ${t.name}${i === g.toolTier ? ' <span class="own cur">EQUIPADA</span>' : owned ? ' <span class="own">✓</span>' : ''}</div><div class="stats">${stat}</div></div></div>
+      html += `<div class="card ${owned || next ? '' : 'locked'} ${i === g.toolTier ? 'current' : ''}"><div class="top"><img src="${this.toolThumb(i)}" alt="" style="background:radial-gradient(circle at 50% 40%, ${t.color}55, #2a1f15)"/><div class="info"><div class="t">${t.name}${i === g.toolTier ? ' <span class="own cur">EM USO</span>' : owned ? ' <span class="own">✓</span>' : ''}</div><div class="stats">${stat}</div></div></div>
         <div class="d">${esc(t.desc)}</div>
-        ${next ? `<div class="foot"><div class="costs"><span class="cost ${g.money < cost ? 'no' : ''}">${fmtMoney(cost)}</span></div><button class="btn ${g.money < cost ? 'disabled' : 'green'}" data-t="${i}">Comprar</button></div>` : !owned ? `<div class="foot"><div class="lock">${fmtMoney(cost)} · compre a anterior primeiro</div></div>` : ''}
+        ${next ? `<div class="foot"><div class="costs"><span class="cost ${g.money < cost ? 'no' : ''}">${fmtMoney(cost)}</span></div><button class="btn ${g.money < cost ? 'disabled' : 'green'}" data-t="${i}">Comprar</button></div>` : !owned ? `<div class="foot"><div class="lock">${fmtMoney(cost)} · compre o anterior primeiro</div></div>` : ''}
       </div>`;
     });
     html += `</div>`;
@@ -621,7 +750,16 @@ export class UI {
     body.querySelectorAll('[data-t]').forEach((b) => b.addEventListener('click', () => {
       const e = g.buyTool(Number((b as HTMLElement).dataset.t));
       if (e) this.flash(b);
-      this.renderModal(false);
+      this.renderModal(true);
+    }));
+    body.querySelectorAll('[data-mod]').forEach((b) => b.addEventListener('click', () => {
+      const e = g.buyModule((b as HTMLElement).dataset.mod!);
+      if (e) this.flash(b);
+      this.renderModal(true);
+    }));
+    body.querySelectorAll('[data-eq]').forEach((b) => b.addEventListener('click', () => {
+      g.equipModule((b as HTMLElement).dataset.eq!);
+      this.renderModal(true);
     }));
   }
 
@@ -636,13 +774,13 @@ export class UI {
       const m = MATERIALS[k];
       const val = g.storage[k] * g.d.value[k];
       total += val;
-      rows += `<div class="mat"><div class="mat-h"><i class="matsw" style="background:${m.color}"></i><div class="mat-n"><b>${m.name}</b><small>${fmtMoney(g.d.value[k])} por unidade</small></div><div class="mat-q"><b>${fmtInt(g.storage[k])}</b><small>${p.backpack[k] ? `+${fmtInt(p.backpack[k])} na mochila` : auto[k] > g.reserve[k] ? `guarda ${fmtShort(auto[k])} p/ máquinas` : 'no depósito'}</small></div></div>
+      rows += `<div class="mat"><div class="mat-h"><i class="matsw" style="background:${m.color}"></i><div class="mat-n"><b>${m.name}</b><small>${fmtMoney(g.d.value[k])} por unidade</small></div><div class="mat-q"><b>${fmtInt(g.storage[k])}</b><small>${p.backpack[k] ? `+${fmtInt(p.backpack[k])} no tanque` : auto[k] > g.reserve[k] ? `guarda ${fmtShort(auto[k])} p/ máquinas` : 'no depósito'}</small></div></div>
         <div class="mat-a"><button class="toggle ${g.autoSell[k] ? 'on' : ''}" data-auto="${k}">${g.autoSell[k] ? '✓ Auto-venda' : '✗ Auto-venda'}</button>
         <button class="toggle" data-res="${k}" title="Quantidade guardada para construções">Guardar ${fmtShort(g.reserve[k])}</button>
         <button class="btn ${g.storage[k] > 0 ? '' : 'disabled'}" data-sell="${k}">Vender ${fmtMoney(val)}</button></div></div>`;
     }
     if (!this.put(body, `<p class="lead">A auto-venda vende o excedente, mas guarda sozinha o material que as máquinas desbloqueadas precisam. "Guardar" aumenta essa reserva.</p>
-      <div class="inv-top"><button class="btn green" data-sellall>Vender tudo · ${fmtMoney(total)}</button><span class="muted">Mochila ${fmtInt(p.carried)}/${fmtInt(g.d.capacity)}${p.carried > 0 ? ' · descarregue no depósito' : ''}</span></div>
+      <div class="inv-top"><button class="btn green" data-sellall>Vender tudo · ${fmtMoney(total)}</button><span class="muted"> Tanque do BIP ${fmtInt(p.carried)}/${fmtInt(g.d.capacity)}${p.carried > 0 ? ' · descarregue no posto' : ''}</span></div>
       <div class="mats">${rows}</div>`)) return;
     body.querySelectorAll('[data-sell]').forEach((b) => b.addEventListener('click', () => { const k = Number((b as HTMLElement).dataset.sell); g.sell(k, g.storage[k]); this.renderModal(false); }));
     body.querySelector('[data-sellall]')?.addEventListener('click', () => { g.sellAll(); this.renderModal(false); });
@@ -707,17 +845,18 @@ export class UI {
 
   private renderMap(body: HTMLElement) {
     const g = this.game;
-    body.innerHTML = `<h2>Mapa do Reino</h2><p class="lead">${g.d.radar ? 'Radar ativo: as cores mostram a densidade de lixo restante.' : 'Dica: o Radar de Lixo mostra a densidade com cores quentes.'}</p>
+    body.innerHTML = `<h2>Mapa</h2><p class="lead">${g.d.radar ? 'Radar ativo: as cores mostram a densidade de sucata restante.' : 'Dica: o Radar de Sucata (árvore de melhorias) mostra a densidade com cores quentes.'} <button class="btn ghost" data-stats style="margin-left:6px">📊 Números</button></p>
       <div class="mapwrap"><canvas width="576" height="576"></canvas><div class="legend">
-      <div><span class="sw" style="background:${g.d.radar ? '#ff3a2a' : '#6e5a40'}"></span>Lixo ${g.d.radar ? '(quanto mais amarelo, mais denso)' : ''}</div>
+      <div><span class="sw" style="background:${g.d.radar ? '#ff3a2a' : '#6e5a40'}"></span>Sucata ${g.d.radar ? '(quanto mais amarelo, mais denso)' : ''}</div>
       <div><span class="sw" style="background:#96764e"></span>Terreno limpo</div>
       <div><span class="sw" style="background:#f0f0f0"></span>Máquinas</div>
-      <div><span class="sw" style="background:#38bdf8"></span>Depósitos</div>
+      <div><span class="sw" style="background:#38bdf8"></span>Postos</div>
       <div><span class="sw" style="background:#ffd54f"></span>Descobertas</div>
       <div><span class="sw" style="background:#fff;border-radius:50%"></span>Você</div>
       <div style="margin-top:8px" class="muted">Limpo: <b style="color:var(--text)">${fmtPct((g.removed / TOTAL_GARBAGE) * 100)}</b></div>
       <div class="muted">Descobertas: <b style="color:var(--text)">${g.specials.filter((s) => s.revealed).length}/${g.specials.length}</b></div>
       </div></div>`;
+    body.querySelector('[data-stats]')?.addEventListener('click', () => this.openModal('stats'));
     this.drawBigMap();
   }
 
@@ -735,9 +874,10 @@ export class UI {
     c.strokeStyle = 'rgba(255,255,255,0.6)'; c.lineWidth = 1.5;
     c.strokeRect((v.x0 / TILE) * k, (v.y0 / TILE) * k, ((v.x1 - v.x0) / TILE) * k, ((v.y1 - v.y0) / TILE) * k);
     g.specials.forEach((s, i) => {
-      if (!s.revealed) return;
+      // the radar sensor shows buried discoveries too
+      if (!s.revealed && !g.d.findRadar) return;
       const sp = g.world.specials[i];
-      c.fillStyle = s.opened ? '#ffd54f' : '#fff59d';
+      c.fillStyle = s.opened ? '#ffd54f' : s.revealed ? '#fff59d' : '#c084fc';
       c.beginPath(); c.arc((sp.tx + sp.size / 2) * k, (sp.ty + sp.size / 2) * k, 5, 0, 6.28); c.fill();
       c.strokeStyle = '#000'; c.lineWidth = 1; c.stroke();
     });
@@ -750,7 +890,7 @@ export class UI {
     const g = this.game;
     const s = g.stats;
     const items: [string, string][] = [
-      ['Lixo restante', fmtInt(g.remaining)], ['Removido', fmtInt(g.removed)], ['Conclusão', fmtPct((g.removed / TOTAL_GARBAGE) * 100)],
+      ['Sucata restante', fmtInt(g.remaining)], ['Removido', fmtInt(g.removed)], ['Conclusão', fmtPct((g.removed / TOTAL_GARBAGE) * 100)],
       ['Coleta por segundo', fmtShort(g.ratePerSec)], ['Coleta por minuto', fmtShort(g.ratePerMin)], ['Recorde por segundo', fmtShort(s.peakRate)],
       ['Coletado por você', fmtInt(s.removedPlayer)], ['Coletado por máquinas', fmtInt(s.removedMachines)], ['Dinheiro ganho', fmtMoney(s.earned)],
       ['Unidades vendidas', fmtInt(s.unitsSold)], ['Raridades achadas', fmtInt(s.rareFound)], ['Máquinas construídas', fmtInt(s.built)],
@@ -774,7 +914,7 @@ export class UI {
       <div class="setrow"><label>Música</label><input type="range" min="0" max="1" step="0.05" value="${st.music}" data-s="music"/></div>
       <div class="setrow"><label>Efeitos sonoros</label><input type="range" min="0" max="1" step="0.05" value="${st.sfx}" data-s="sfx"/></div>
       <div class="setrow"><label>Partículas</label><button class="toggle ${st.quality >= 1 ? 'on' : ''}" data-q>${st.quality >= 1 ? 'Alta' : 'Econômica'}</button></div>
-      <div class="setrow"><label>Mostrar áreas de serviço dos depósitos</label><button class="toggle ${st.ranges ? 'on' : ''}" data-r>${st.ranges ? 'Sim' : 'Não'}</button></div>
+      <div class="setrow"><label>Mostrar áreas de serviço dos postos</label><button class="toggle ${st.ranges ? 'on' : ''}" data-r>${st.ranges ? 'Sim' : 'Não'}</button></div>
       <div class="setrow"><label>Salvar agora <span class="muted">(o jogo salva sozinho a cada 15 s)</span></label><button class="btn ghost" data-save>Salvar</button></div>
       <div class="setrow"><label>Apagar todo o progresso</label><button class="btn red" data-reset>Reiniciar progresso</button></div>
       <p class="muted" style="margin-top:14px;font-size:13px">Garbage Kingdom — arte, animações, música e efeitos 100% gerados por código. Controles: WASD/setas para andar, segure o botão do mouse ou ESPAÇO para coletar, E para interagir, roda do mouse para zoom, B construir, U melhorias, T ferramentas, I depósito, M mapa, R girar esteira, Esc fechar.</p><p class="ver" data-ver>versão ${__BUILD__}</p>`;
@@ -864,7 +1004,7 @@ export class UI {
   introPopup(isNew: boolean, onStart: () => void) {
     this.queuePopup(() => {
       const el = h(`<div class="popup intro"><div class="logo">GARBAGE<br/><span>KINGDOM</span></div>
-        <p>${isNew ? 'Você comprou um terreno por R$ 1,00. Ele vem com <b>1.000.000 de unidades de lixo</b>. Limpe tudo. Uma coisa de cada vez. Depois, mil de cada vez.' : 'Bem-vindo de volta, Majestade. O lixo sentiu sua falta. Ele não foi a lugar nenhum.'}</p>
+        <p>${isNew ? 'Nébula-7, o lixão da galáxia: <b>1.000.000 de unidades de sucata</b> e um robozinho recém-montado. Limpe o planeta, cumpra os contratos da MÃE e traga os Glubs de volta.' : 'Bip-bop! O posto sentiu sua falta. A sucata também. Ela não foi a lugar nenhum.'}</p>
         <p class="muted" style="font-size:13px">${document.body.classList.contains('touch') ? 'Joystick à esquerda para andar · segure COLETAR' : 'WASD para andar · segure o mouse ou ESPAÇO para coletar · E interage'}</p>
         <button class="btn" data-ok style="font-size:18px;padding:12px 30px">${isNew ? 'Começar a limpar' : 'Continuar'}</button><p class="ver" data-ver>versão ${__BUILD__}</p></div>`);
       el.querySelector('[data-ok]')!.addEventListener('click', onStart);

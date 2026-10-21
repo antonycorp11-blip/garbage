@@ -79,6 +79,7 @@ describe('Game', () => {
     g.storage = [1e6, 1e6, 1e6, 1e6, 1e6, 0];
     g.upgrades.a_belts = 1; g.upgrades.a_arm = 1;
     g.autoSell = [false, false, false, false, false, false];
+    g.contracts.started = true; // keep the welcome contract from eating the storage
     g.recompute();
     // a straight line from x=CENTER+2 (depot right edge is CENTER+1) east
     const y = CENTER;
@@ -201,5 +202,64 @@ describe('Game', () => {
     expect(g.yardCap()).toBeGreaterThan(cap);
     clearArea(g, CENTER + 40, CENTER, CENTER + 41, CENTER + 1);
     expect(g.build('crusher', CENTER + 40, CENTER)).not.toBeNull(); // must be inside a depot circle
+  });
+
+  it('contracts: welcome contract, completion, failure and save', () => {
+    const g = new Game();
+    g.autoSell = [false, false, false, false, false, false];
+    for (let i = 0; i < 450; i++) g.update(0.1, idle);
+    expect(g.contracts.active.length).toBe(1);
+    const c = g.contracts.active[0];
+    expect(c.req[1]).toBe(25);
+    // reserve keeps the contract material from auto-sell
+    expect(g.autoReserve()[1]).toBeGreaterThanOrEqual(25);
+    g.storage[1] = 30;
+    const m0 = g.money;
+    for (let i = 0; i < 10; i++) g.update(0.1, idle);
+    expect(g.contracts.completed).toBe(1);
+    expect(g.money).toBeGreaterThan(m0);
+    expect(g.storage[1]).toBe(5);
+    expect(g.shuttleT).toBeGreaterThan(0);
+    // offers arrive after the first delivery
+    for (let i = 0; i < 10; i++) g.update(0.1, idle);
+    expect(g.contracts.offers.length).toBe(3);
+    const offer = g.contracts.offers[2];
+    expect(g.acceptContract(offer.id)).toBeNull();
+    // and expire if ignored
+    const rep = g.contracts.rep;
+    g.stats.playTime = offer.deadline + 1;
+    g.update(0.6, idle);
+    expect(g.contracts.active.length).toBe(0);
+    expect(g.contracts.rep).toBe(rep - 1);
+    // persisted
+    const kv = mem();
+    new SaveManager(kv).save(g);
+    const g2 = new Game();
+    expect(new SaveManager(kv).load(g2).ok).toBe(true);
+    expect(g2.contracts.completed).toBe(1);
+    expect(g2.contracts.offers.length).toBe(g.contracts.offers.length);
+  });
+
+  it('modules change stats and persist', () => {
+    const g = new Game();
+    const cap = g.d.capacity, slow = g.d.garbageSlow;
+    g.money = 1e6; g.storage = [1e4, 1e4, 1e4, 1e4, 1e4, 10];
+    expect(g.buyModule('treads')).toBeNull();
+    expect(g.loadout.move).toBe('treads');
+    expect(g.d.garbageSlow).toBe(0);
+    expect(slow).toBeGreaterThan(0);
+    expect(g.buyModule('compactor')).toBeNull();
+    expect(g.d.capacity).toBeGreaterThan(cap);
+    expect(g.buyModule('hover')).not.toBeNull(); // needs a blueprint
+    g.blueprints.push('hover');
+    expect(g.buyModule('hover')).toBeNull();
+    g.equipModule('treads');
+    const kv = mem();
+    new SaveManager(kv).save(g);
+    const g2 = new Game();
+    new SaveManager(kv).load(g2);
+    expect(g2.loadout.move).toBe('treads');
+    expect(g2.ownedModules).toContain('hover');
+    expect(g2.d.garbageSlow).toBe(0);
   });
 });

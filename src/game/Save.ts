@@ -19,6 +19,8 @@ export interface SaveData {
   loadout?: Record<string, string>;
   ownedModules?: string[];
   blueprints?: string[];
+  contracts?: unknown;
+  storyStep?: number;
   upgrades: Record<string, number>;
   flags: Record<string, boolean>;
   player: { x: number; y: number; backpack: number[]; carried: number };
@@ -48,6 +50,8 @@ export function serialize(g: Game): SaveData {
     loadout: { ...g.loadout },
     ownedModules: g.ownedModules.slice(),
     blueprints: g.blueprints.slice(),
+    contracts: g.contracts.serialize(),
+    storyStep: g.storyStep,
     upgrades: { ...g.upgrades },
     flags: { ...g.flags },
     player: { x: g.player.x, y: g.player.y, backpack: g.player.backpack.slice(), carried: g.player.carried },
@@ -78,6 +82,8 @@ export function applySave(g: Game, raw: unknown): void {
   const ids = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && !!MODULE_MAP[x]) : []);
   g.ownedModules = Array.from(new Set([...Object.values(DEFAULT_LOADOUT), ...ids(s.ownedModules)]));
   g.blueprints = ids(s.blueprints);
+  g.contracts.load(s.contracts);
+  g.storyStep = Math.max(0, Math.floor(num(s.storyStep)));
   for (const slot of Object.keys(DEFAULT_LOADOUT) as ModuleSlot[]) {
     const id = s.loadout?.[slot];
     g.loadout[slot] = id && MODULE_MAP[id]?.slot === slot && g.ownedModules.includes(id) ? id : DEFAULT_LOADOUT[slot];

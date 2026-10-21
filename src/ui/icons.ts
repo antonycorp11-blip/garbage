@@ -4,6 +4,8 @@ export const ICONS = {
   upgrades: s('<path d="M12 3v18"/><path d="M5 10l7-7 7 7"/><circle cx="5" cy="19" r="2" fill="currentColor"/><circle cx="19" cy="19" r="2" fill="currentColor"/><path d="M5 17v-3h14v3"/>'),
   build: s('<path d="M3 21h18"/><rect x="5" y="10" width="6" height="11"/><rect x="13" y="6" width="6" height="15"/><path d="M8 10V5l3-2"/><path d="M15 9h2M15 12h2M15 15h2"/>'),
   tools: s('<path d="M14.7 6.3a4 4 0 0 0 5 5L21 13l-8 8-3-3 8-8-1.3-1.3a4 4 0 0 0-5-5L13 5z"/><path d="M3 21l6-6"/>'),
+  contracts: s('<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4V3h6v1"/><path d="M8.5 11l2 2 4-4"/><path d="M8.5 17h7"/>'),
+  workshop: s('<circle cx="12" cy="12" r="4"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/>'),
   inventory: s('<path d="M4 8h16l-1.5 12h-13z"/><path d="M8 8V6a4 4 0 0 1 8 0v2"/><path d="M9 13h6"/>'),
   map: s('<path d="M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/>'),
   stats: s('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>'),

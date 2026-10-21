@@ -397,7 +397,7 @@ export class App implements PointerSink {
       return;
     }
     if (this.ui.popupOpen) return;
-    const tabs: Record<string, Parameters<UI['openModal']>[0]> = { KeyB: 'build', KeyU: 'upgrades', KeyT: 'tools', KeyI: 'inventory', KeyM: 'map', KeyP: 'stats' };
+    const tabs: Record<string, Parameters<UI['openModal']>[0]> = { KeyC: 'contracts', KeyB: 'build', KeyU: 'upgrades', KeyO: 'tools', KeyT: 'tools', KeyI: 'inventory', KeyM: 'map', KeyP: 'stats' };
     if (tabs[code]) { if (this.ui.modalTab === tabs[code]) this.ui.closeModal(); else this.ui.openModal(tabs[code]); return; }
     if (code === 'KeyR') this.rotateBuild();
     if (code === 'Equal' || code === 'NumpadAdd') this.zoomBy(1.15);
