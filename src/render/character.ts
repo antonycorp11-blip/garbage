@@ -28,11 +28,11 @@ export function drawPlayer(c: C, g: Game, time: number) {
   drawWorker(c, p.x, p.y, time, {
     facing: p.facing, moving: p.moving, walk: p.walk, action: p.action, tier: g.toolTier,
     bagLvl: g.upgrades.c_bag || 0, fill: g.d.capacity ? p.carried / g.d.capacity : 0, crown: !!g.flags.crown,
-    happy: p.collecting,
+    happy: p.collecting, loadout: g.loadout,
   });
 }
 
-export interface WorkerPose { facing: string; moving: boolean; walk: number; action: number; tier: number; bagLvl: number; fill: number; crown: boolean; happy?: boolean }
+export interface WorkerPose { facing: string; moving: boolean; walk: number; action: number; tier: number; bagLvl: number; fill: number; crown: boolean; happy?: boolean; loadout?: { move: string; tank: string; sensor: string } }
 
 export function drawWorker(c: C, x: number, y: number, time: number, o: WorkerPose) {
   const dir = o.facing;

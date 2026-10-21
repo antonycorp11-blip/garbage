@@ -6,7 +6,7 @@ export const WORLD_PX = WORLD_TILES * TILE;
 export const TOTAL_GARBAGE = 1_000_000;
 export const CENTER = WORLD_TILES / 2;
 export const SAVE_KEY = 'garbage-kingdom-save';
-export const SAVE_VERSION = 1;
+export const SAVE_VERSION = 2;
 /** Tiles of garbage around a chunk that can visually overflow into it. */
 export const CHUNK_MARGIN = 2;
 

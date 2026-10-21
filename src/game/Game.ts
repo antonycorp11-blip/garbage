@@ -4,6 +4,7 @@ import { DISCOVERIES } from '../data/discoveries';
 import { BUILD_ORDER, MACHINES, MAX_MACHINE_LEVEL, MachineType, machineUpgradeCost } from '../data/machines';
 import { MATERIALS, MAT_COUNT, M_ELEC, M_METAL, M_RARE, emptyMats, sumMats } from '../data/materials';
 import { INTRO, MILESTONES, RANDOM_MESSAGES, RARE_FINDS, SENDER, TV_ADS } from '../data/messages';
+import { DEFAULT_LOADOUT, ModuleSlot } from '../data/modules';
 import { TOOLS } from '../data/tools';
 import { UPGRADES, UPGRADE_MAP, upgradeCost } from '../data/upgrades';
 import { World } from '../world/World';
@@ -63,6 +64,14 @@ export class Game {
   autoSell = [true, true, true, true, true, true];
   reserve = [0, 0, 0, 0, 0, 0];
   toolTier = 0;
+  /** equipped module per slot */
+  loadout: Record<ModuleSlot, string> = { ...DEFAULT_LOADOUT };
+  /** modules bought (always includes the defaults) */
+  ownedModules: string[] = Object.values(DEFAULT_LOADOUT);
+  /** module blueprints earned from contracts */
+  blueprints: string[] = [];
+  /** seconds left of the orbital shuttle visiting the depot (0 = away) */
+  shuttleT = 0;
   upgrades: Record<string, number> = {};
   flags: Record<string, boolean> = {};
   specials: SpecialState[];
@@ -140,7 +149,7 @@ export class Game {
   }
 
   recompute() {
-    this.d = computeDerived({ up: this.upgrades, flags: this.flags, recyclers: this.machines.count('recycler') });
+    this.d = computeDerived({ up: this.upgrades, flags: this.flags, recyclers: this.machines.count('recycler'), loadout: Object.values(this.loadout) });
     this.machines.linksDirty = true;
   }
 
@@ -735,7 +744,7 @@ export class Game {
 
   findSingleTarget(input: InputState): number {
     const p = this.player;
-    const reach = this.tool.reach * this.d.reachMult;
+    const reach = this.tool.reach * this.d.reachMult + this.d.reachAdd;
     const px = p.tx, py = p.ty;
     const w = this.world;
     let best = -1, bs = Infinity;
@@ -838,7 +847,7 @@ export class Game {
       }
     } else {
       const [ax, ay] = this.aimDir(input);
-      const reach = tool.reach * this.d.reachMult;
+      const reach = tool.reach * this.d.reachMult + this.d.reachAdd;
       const cx = p.tx + ax * reach, cy = p.ty + ay * reach;
       this.areaCenter = { x: cx, y: cy };
       if (!input.collect) { this.areaAcc = 0; return; }

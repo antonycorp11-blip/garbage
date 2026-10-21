@@ -1,6 +1,7 @@
 import { SAVE_KEY, SAVE_VERSION, tileIndex } from '../core/constants';
 import { MAT_COUNT } from '../data/materials';
 import { MACHINES, MachineType } from '../data/machines';
+import { DEFAULT_LOADOUT, MODULE_MAP, ModuleSlot } from '../data/modules';
 import { TOOLS } from '../data/tools';
 import { UPGRADE_MAP } from '../data/upgrades';
 import { Game } from './Game';
@@ -15,6 +16,9 @@ export interface SaveData {
   autoSell: boolean[];
   reserve: number[];
   toolTier: number;
+  loadout?: Record<string, string>;
+  ownedModules?: string[];
+  blueprints?: string[];
   upgrades: Record<string, number>;
   flags: Record<string, boolean>;
   player: { x: number; y: number; backpack: number[]; carried: number };
@@ -41,6 +45,9 @@ export function serialize(g: Game): SaveData {
     autoSell: g.autoSell.slice(),
     reserve: g.reserve.slice(),
     toolTier: g.toolTier,
+    loadout: { ...g.loadout },
+    ownedModules: g.ownedModules.slice(),
+    blueprints: g.blueprints.slice(),
     upgrades: { ...g.upgrades },
     flags: { ...g.flags },
     player: { x: g.player.x, y: g.player.y, backpack: g.player.backpack.slice(), carried: g.player.carried },
@@ -68,6 +75,13 @@ export function applySave(g: Game, raw: unknown): void {
   if (Array.isArray(s.autoSell)) g.autoSell = Array.from({ length: MAT_COUNT }, (_, i) => s.autoSell[i] !== false);
   g.reserve = mats(s.reserve);
   g.toolTier = Math.max(0, Math.min(TOOLS.length - 1, Math.floor(num(s.toolTier))));
+  const ids = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && !!MODULE_MAP[x]) : []);
+  g.ownedModules = Array.from(new Set([...Object.values(DEFAULT_LOADOUT), ...ids(s.ownedModules)]));
+  g.blueprints = ids(s.blueprints);
+  for (const slot of Object.keys(DEFAULT_LOADOUT) as ModuleSlot[]) {
+    const id = s.loadout?.[slot];
+    g.loadout[slot] = id && MODULE_MAP[id]?.slot === slot && g.ownedModules.includes(id) ? id : DEFAULT_LOADOUT[slot];
+  }
   g.upgrades = {};
   for (const [k, v] of Object.entries(s.upgrades || {})) if (UPGRADE_MAP[k]) g.upgrades[k] = Math.max(0, Math.min(UPGRADE_MAP[k].max, Math.floor(num(v))));
   g.flags = {};
