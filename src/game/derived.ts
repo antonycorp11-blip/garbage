@@ -40,9 +40,13 @@ export interface DerivedInput {
   recyclers: number;
   /** equipped module ids */
   loadout?: string[];
+  /** rarity stars of the equipped locomotion, tank and sensor */
+  stars?: { move: number; tank: number; sensor: number };
+  /** temporary machine boost (ion storm) */
+  boost?: number;
 }
 
-export function computeDerived({ up, flags, recyclers, loadout = [] }: DerivedInput): Derived {
+export function computeDerived({ up, flags, recyclers, loadout = [], stars = { move: 0, tank: 0, sensor: 0 }, boost = 1 }: DerivedInput): Derived {
   const L = (id: string) => up[id] || 0;
   const fx: ModuleEffects[] = loadout.map((id) => MODULE_MAP[id]?.fx).filter((f): f is ModuleEffects => !!f);
   const mul = (k: 'speed' | 'slow' | 'cap' | 'value' | 'rare') => fx.reduce((a, f) => a * (f[k] ?? 1), 1);
@@ -52,9 +56,9 @@ export function computeDerived({ up, flags, recyclers, loadout = [] }: DerivedIn
   const statue = flags.statue ? 1.15 : 1;
   const valueBase = (1 + 0.1 * L('r_value')) * (1 + 0.15 * L('r_quality')) * (1 + 0.15 * rec) * (flags.crown ? 1.25 : 1);
   return {
-    capacity: Math.round(20 * Math.pow(1.55, L('c_bag')) * mul('cap')),
+    capacity: Math.round(20 * Math.pow(1.55, L('c_bag')) * mul('cap') * (1 + 0.12 * stars.tank)),
     collectMult: (1 + 0.15 * L('c_speed')) * statue,
-    moveSpeed: 4.4 * (1 + 0.1 * L('c_move')) * mul('speed'),
+    moveSpeed: 4.4 * (1 + 0.1 * L('c_move')) * mul('speed') * (1 + 0.07 * stars.move),
     garbageSlow: 0.5 * (1 - 0.13 * L('c_move')) * mul('slow'),
     reachMult: 1 + 0.15 * L('c_reach'),
     reachAdd,
@@ -68,12 +72,12 @@ export function computeDerived({ up, flags, recyclers, loadout = [] }: DerivedIn
     radar: L('c_radar') > 0 || !!flags.radar,
     findRadar: fx.some((f) => f.radar),
     orbitalRate: 12 * L('c_orbital'),
-    machineSpeed: (1 + 0.1 * L('a_speed')) * (1 + 0.2 * L('a_integr')) * (1 + 0.1 * rec) * statue * (flags.alien ? 1.25 : 1),
+    machineSpeed: (1 + 0.1 * L('a_speed')) * (1 + 0.2 * L('a_integr')) * (1 + 0.1 * rec) * statue * (flags.alien ? 1.25 : 1) * boost,
     machineRadiusMult: 1 + 0.12 * L('a_radius'),
     bufferMult: 1 + 0.5 * L('a_buffer'),
     beltSpeed: 1.6 * (1 + 0.35 * L('a_beltspeed')),
     extraRobots: L('a_robotcount') + (flags.robotBonus ? 1 : 0),
-    value: MATERIALS.map((m, i) => m.value * valueBase * mul('value') * (i === M_METAL || i === M_ELEC ? 1 + 0.25 * L('r_metal') : 1)),
+    value: MATERIALS.map((m, i) => m.value * valueBase * mul('value') * (1 + 0.06 * stars.sensor) * (i === M_METAL || i === M_ELEC ? 1 + 0.25 * L('r_metal') : 1)),
     sepBonus: 0.35 * (1 + 0.2 * L('r_sepbonus')),
     serviceBonus: 2 * L('r_depot'),
     processBonus: 6 * L('r_depot'),

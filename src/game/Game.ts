@@ -38,7 +38,10 @@ export type GameEvent =
   | { type: 'changed' }
   | { type: 'contract'; ok: boolean; title: string; money: number; blueprint: string | null }
   | { type: 'offers' }
-  | { type: 'sector'; name: string; money: number };
+  | { type: 'sector'; name: string; money: number }
+  | { type: 'worldEvent'; ev: WorldEvent | null; text: string };
+
+export interface WorldEvent { kind: 'meteor' | 'ion' | 'cargo'; until: number; x: number; y: number; sector: number; title: string }
 
 export interface SpecialState { revealed: boolean; opened: boolean; progress: number }
 
@@ -81,6 +84,12 @@ export class Game {
   /** seconds left of the orbital shuttle visiting the depot (0 = away) */
   shuttleT = 0;
   contracts = new ContractBoard();
+  worldEvent: WorldEvent | null = null;
+  private nextEventAt = 420;
+  private eventFxT = 0;
+  /** Rare Cores (weekly goals) upgrade module rarity */
+  cores = 0;
+  moduleStars: Record<string, number> = {};
   /** next STORY beat to tell */
   storyStep = 0;
   private teleportT = 0;
@@ -278,6 +287,87 @@ export class Game {
     return best;
   }
 
+  /** Meteor showers make relics far more common inside their sector. */
+  eventRareMult(tile: number) {
+    const ev = this.worldEvent;
+    if (!ev || ev.kind !== 'meteor') return 1;
+    const tx = tile % WORLD_TILES, ty = (tile / WORLD_TILES) | 0;
+    return ((ty / 16) | 0) * SECTORS + ((tx / 16) | 0) === ev.sector ? 8 : 1;
+  }
+
+  private updateWorldEvent(dt: number) {
+    const now = this.stats.playTime;
+    const ev = this.worldEvent;
+    if (!ev) {
+      if (!this.contracts.started || now < this.nextEventAt) return;
+      this.startWorldEvent();
+      return;
+    }
+    if (ev.kind === 'meteor' && (this.eventFxT -= dt) <= 0) {
+      this.eventFxT = 0.35;
+      const x = ev.x + (Math.random() - 0.5) * 14 * TILE, y = ev.y + (Math.random() - 0.5) * 14 * TILE;
+      if (this.isVisible(x, y)) { this.fx.burst(x, y, 'spark', 10); this.fx.burst(x, y, 'dust', 6); this.fx.shake(1.2); }
+    }
+    if (ev.kind === 'cargo' && Math.hypot(this.player.x - ev.x, this.player.y - ev.y) < 1.6 * TILE) {
+      // the player got there first
+      const lvl = this.contracts.level;
+      const money = Math.round((300 + this.avgRate * 40) * (1 + 0.3 * lvl));
+      const mats = emptyMats();
+      for (let k = 0; k < 5; k++) mats[k] = Math.round((20 + this.avgRate * 6) * (0.5 + Math.random()));
+      if (Math.random() < 0.5) mats[M_RARE] = 1 + Math.floor(Math.random() * 3);
+      this.earn(money);
+      this.deliver(mats, 1, -1, -1, true);
+      this.fx.burst(ev.x, ev.y, 'unlock', 50);
+      this.fx.sound('win');
+      this.endWorldEvent(`Cápsula aberta! +$${money.toLocaleString('pt-BR')} e um punhado de materiais nos silos.`);
+      return;
+    }
+    if (now >= ev.until) this.endWorldEvent(ev.kind === 'cargo' ? 'A cápsula de carga se desintegrou. Da próxima vez, corra!' : ev.kind === 'ion' ? 'A tempestade iônica passou. As máquinas voltaram ao normal.' : 'A chuva de meteoros acabou.');
+  }
+
+  private startWorldEvent() {
+    const kinds: WorldEvent['kind'][] = ['meteor', 'cargo', 'ion'];
+    const kind = kinds[Math.floor(Math.random() * kinds.length)];
+    // a sector that still has junk, not too far from the player
+    const p = this.player;
+    let best = -1, bs = Infinity;
+    for (let k = 0; k < this.sectorsDone.length; k++) {
+      if (this.sectorsDone[k]) continue;
+      const sx = ((k % SECTORS) + 0.5) * 16, sy = (Math.floor(k / SECTORS) + 0.5) * 16;
+      const d = Math.abs(Math.hypot(sx - p.tx, sy - p.ty) - 22) + Math.random() * 12;
+      if (d < bs) { bs = d; best = k; }
+    }
+    if (best < 0) { this.nextEventAt = this.stats.playTime + 600; return; }
+    const x = ((best % SECTORS) + 0.5) * 16 * TILE, y = (Math.floor(best / SECTORS) + 0.5) * 16 * TILE;
+    const name = this.sectorName(best);
+    const dur = kind === 'cargo' ? 75 : kind === 'ion' ? 60 : 90;
+    let tx = Math.floor(x / TILE), ty = Math.floor(y / TILE);
+    if (kind === 'cargo') {
+      // land on a reachable spot: nearest tile with little junk
+      let bd = Infinity;
+      for (let yy = -7; yy <= 7; yy++) for (let xx = -7; xx <= 7; xx++) {
+        const ax = tx + xx, ay = ty + yy;
+        if (!inWorld(ax, ay)) continue;
+        const v = this.world.garbage[tileIndex(ax, ay)] + Math.hypot(xx, yy) * 3;
+        if (v < bd) { bd = v; tx = ax; ty = ay; }
+      }
+    }
+    const ev: WorldEvent = { kind, until: this.stats.playTime + dur, x: (tx + 0.5) * TILE, y: (ty + 0.5) * TILE, sector: best, title: kind === 'meteor' ? 'Chuva de meteoros' : kind === 'ion' ? 'Tempestade iônica' : 'Cápsula de carga' };
+    this.worldEvent = ev;
+    if (kind === 'ion') this.recompute();
+    const text = kind === 'meteor' ? `Chuva de meteoros no ${name}! Por 90 s, coletar lá dá 8× mais relíquias.` : kind === 'ion' ? 'Tempestade iônica! Todas as máquinas trabalham 60% mais rápido por 1 minuto.' : `Uma cápsula de carga caiu no ${name}! Chegue lá em 75 s para abrir.`;
+    this.fx.sound('discover');
+    this.events.push({ type: 'worldEvent', ev, text });
+  }
+
+  private endWorldEvent(text: string) {
+    const was = this.worldEvent;
+    this.worldEvent = null;
+    this.nextEventAt = this.stats.playTime + 300 + Math.random() * 300;
+    if (was?.kind === 'ion') this.recompute();
+    this.events.push({ type: 'worldEvent', ev: null, text });
+  }
+
   sectorLeft(k: number) {
     const per = SECTOR / CHUNK, sx = k % SECTORS, sy = (k / SECTORS) | 0;
     let left = 0;
@@ -347,7 +437,7 @@ export class Game {
   }
 
   recompute() {
-    this.d = computeDerived({ up: this.upgrades, flags: this.flags, recyclers: this.machines.count('recycler'), loadout: Object.values(this.loadout) });
+    this.d = computeDerived({ up: this.upgrades, flags: this.flags, recyclers: this.machines.count('recycler'), boost: this.worldEvent?.kind === 'ion' ? 1.6 : 1, loadout: Object.values(this.loadout), stars: { move: this.moduleStars[this.loadout.move] || 0, tank: this.moduleStars[this.loadout.tank] || 0, sensor: this.moduleStars[this.loadout.sensor] || 0 } });
     this.machines.linksDirty = true;
   }
 
@@ -894,6 +984,45 @@ export class Game {
     return null;
   }
 
+  /** Delivers silo stock to the weekly goal. */
+  deliverWeekly(): number {
+    const w = this.contracts.weekly;
+    if (!w || w.delivered >= w.need) return 0;
+    const n = Math.min(Math.floor(this.storage[w.mat]), w.need - w.delivered);
+    if (n <= 0) return 0;
+    this.storage[w.mat] -= n;
+    w.delivered += n;
+    this.fx.sound('unload');
+    if (w.delivered >= w.need) {
+      this.cores += w.cores;
+      this.earn(w.money);
+      this.shuttleT = 6;
+      this.fx.sound('win');
+      this.events.push({ type: 'contract', ok: true, title: 'Meta da semana', money: w.money, blueprint: null });
+      this.notify(`Meta da semana cumprida! +${w.cores} Núcleo Raro. A Diretoria ficou sem palavras. Literalmente, ela não tem boca.`, MAE);
+    }
+    return n;
+  }
+
+  /** Rarity upgrade: 0 comum, 1 raro, 2 lendário. */
+  starCost(id: string) { const s = this.moduleStars[id] || 0; return { cores: s + 1, money: Math.round(8000 * Math.pow(s + 1, 2) * this.d.costMult) }; }
+
+  upgradeModuleStar(id: string): string | null {
+    if (!this.ownedModules.includes(id)) return 'Compre o módulo primeiro';
+    const s = this.moduleStars[id] || 0;
+    if (s >= 2) return 'Já é lendário';
+    const c = this.starCost(id);
+    if (this.cores < c.cores) return `Faltam ${c.cores - this.cores} Núcleo(s) Raro(s): cumpra a meta da semana`;
+    if (this.money < c.money) return 'Dinheiro insuficiente';
+    this.cores -= c.cores;
+    this.money -= c.money;
+    this.moduleStars[id] = s + 1;
+    this.recompute();
+    this.fx.sound('unlock');
+    this.fx.burst(this.player.x, this.player.y - 10, 'unlock', 40);
+    return null;
+  }
+
   // ------------------------------------------------------------------ modules
   moduleState(id: string): 'equipped' | 'owned' | 'buy' | 'locked' {
     const m = MODULE_MAP[id];
@@ -958,11 +1087,13 @@ export class Game {
     // punctuality bonus: more than half of the time left
     const early = c.deadline - this.stats.playTime > (c.days * DAY) / 2;
     cb.rep += c.rep + (early ? 1 : 0);
-    this.earn(c.money);
+    const pay = Math.round(c.money * cb.streakMult);
+    cb.streak++;
+    this.earn(pay);
     if (c.blueprint && !this.blueprints.includes(c.blueprint)) this.blueprints.push(c.blueprint);
     this.shuttleT = 6;
     this.fx.sound('win');
-    this.events.push({ type: 'contract', ok: true, title: c.title, money: c.money, blueprint: c.blueprint });
+    this.events.push({ type: 'contract', ok: true, title: c.title, money: pay, blueprint: c.blueprint });
     this.notify(CONTRACT_LINES.done[Math.floor(Math.random() * CONTRACT_LINES.done.length)] + (early ? ' Bônus de pontualidade: +1 reputação.' : ''), MAE);
     this.events.push({ type: 'changed' });
   }
@@ -971,6 +1102,7 @@ export class Game {
     const cb = this.contracts;
     cb.remove(c);
     cb.failed++;
+    cb.streak = 0;
     cb.rep = Math.max(0, cb.rep - 1);
     const pay = Math.round(c.money * cb.progress(c) * 0.4);
     if (pay > 0) this.earn(pay);
@@ -995,6 +1127,7 @@ export class Game {
       this.notify(b.text, STORY_SENDER[b.from]);
     }
     if (cb.completed >= 1 && cb.refreshOffers(this.contractHost)) this.events.push({ type: 'offers' });
+    if (cb.completed >= 2 && cb.refreshWeekly(this.contractHost)) this.notify(`Meta da semana: ${cb.weekly!.need} de ${MATERIALS[cb.weekly!.mat].name}. Prêmio: ${cb.weekly!.cores} Núcleo Raro (evolui módulos na Oficina).`, MAE);
     for (const c of cb.active) {
       if (cb.canFinish(c, this.storage)) { this.finishContract(c); continue; }
       const left = c.deadline - now;
@@ -1058,6 +1191,7 @@ export class Game {
     this.updateMeta(dt);
     this.updateContracts(dt);
     this.updateSectors(dt);
+    this.updateWorldEvent(dt);
     this.beltWarnT -= dt;
     this.updateRoamers();
     this.updateTeleport(dt);
@@ -1201,7 +1335,7 @@ export class Game {
     const r = w.remove(tile, Math.min(n, free), 'player');
     if (r <= 0) return 0;
     const mats = emptyMats();
-    w.rollMaterials(tile, r, this.d.rareChance, mats);
+    w.rollMaterials(tile, r, this.d.rareChance * this.eventRareMult(tile), mats);
     if (bias) {
       // magnetic tools: part of plastic/paper rolls become metal/electronics
       const conv = Math.floor((mats[0] + mats[2]) * 0.25);
@@ -1322,7 +1456,7 @@ export class Game {
           if (w.garbage[i] > 0) {
             const before = w.garbage[i];
             const r = w.remove(i, n, 'machine');
-            w.rollMaterials(i, r, this.d.rareChance, mats);
+            w.rollMaterials(i, r, this.d.rareChance * this.eventRareMult(i), mats);
             n -= r;
             this.machines.removedAcc += r;
             const tx = i % WORLD_TILES, ty = (i / WORLD_TILES) | 0;
@@ -1592,12 +1726,51 @@ export class Game {
   }
 
   /** cost to drive progress UI */
-  nextGoal(): string {
-    if (this.toolTier === 0 && this.money < 60) return 'Colete sucata e descarregue no posto para ganhar dinheiro.';
-    if (this.toolTier === 0) return 'Compre a Pá Telescópica na Oficina.';
-    if (this.machines.count('collector') === 0) return 'Construa seu primeiro Coletor (menu Construir).';
-    return '';
+  nextGoal(): string { return this.guide()?.text ?? ''; }
+
+  private guideCache: { t: number; g: { text: string; x?: number; y?: number; tab?: string } | null } = { t: -1, g: null };
+
+  /** First steps: what to do next and where (world point or menu tab). */
+  guide(): { text: string; x?: number; y?: number; tab?: string } | null {
+    const now = this.stats.playTime;
+    if (now - this.guideCache.t < 0.5 && this.guideCache.t >= 0) return this.guideCache.g;
+    this.guideCache = { t: now, g: this.computeGuide() };
+    return this.guideCache.g;
   }
+
+  private nearestTile(maxR: number, ok: (i: number) => boolean): { x: number; y: number } | null {
+    const p = this.player, px = Math.floor(p.tx), py = Math.floor(p.ty);
+    for (let r = 1; r <= maxR; r++) for (let y = -r; y <= r; y++) for (let x = -r; x <= r; x++) {
+      if (Math.max(Math.abs(x), Math.abs(y)) !== r) continue;
+      const tx = px + x, ty = py + y;
+      if (inWorld(tx, ty) && ok(tileIndex(tx, ty))) return { x: (tx + 0.5) * TILE, y: (ty + 0.5) * TILE };
+    }
+    return null;
+  }
+
+  private computeGuide(): { text: string; x?: number; y?: number; tab?: string } | null {
+    const p = this.player;
+    if (this.contracts.completed >= 1 && this.machines.count('collector') > 0 && this.toolTier >= 1) return null;
+    const dx = centerX(this.depot) * TILE, dy = centerY(this.depot) * TILE;
+    if (p.carried >= this.d.capacity * 0.95) return { text: 'Tanque cheio! Volte ao posto para descarregar', x: dx, y: dy };
+    if (this.stats.removedPlayer < 12) {
+      const t = this.nearestTile(16, (i) => this.world.lightAvailable(i) > 0);
+      return { text: 'Vá até a sucata e segure COLETAR', ...(t ?? {}) };
+    }
+    if (this.toolTier === 0 && this.money >= 60) return { text: 'Abra a Oficina e compre a Pá Telescópica', tab: 'tools' };
+    if (this.toolTier === 0) return p.carried > 5 ? { text: 'Descarregue no posto para ganhar dinheiro', x: dx, y: dy } : { text: 'Colete sucata e traga ao posto' };
+    if (this.machines.count('collector') === 0) return this.money >= 140 ? { text: 'Construa um Coletor no menu Construir', tab: 'build' } : { text: 'Junte $140 para o primeiro Coletor' };
+    const tut = this.contracts.active.find((c) => c.title === 'Contrato de boas-vindas');
+    if (tut && this.storage[1] + tut.delivered[1] < tut.req[1]) {
+      // the region type richest in Liga Estelar
+      let best = 0, bw = 0;
+      REGIONS.forEach((r, k) => { const tot = r.mats.reduce((a, b) => a + b, 0); if (tot > 0 && r.mats[1] / tot > bw) { bw = r.mats[1] / tot; best = k; } });
+      const t = this.nearestTile(40, (i) => this.world.region[i] === best && this.world.garbage[i] > 0);
+      return { text: `A MÃE quer Liga Estelar: colete em ${REGIONS[best].name}`, ...(t ?? {}) };
+    }
+    return null;
+  }
+
 
   clampCam(x: number) { return clamp(x, 0, WORLD_TILES * TILE); }
 }

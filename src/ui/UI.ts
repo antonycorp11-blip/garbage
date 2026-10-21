@@ -68,12 +68,18 @@ export class UI {
     const left = h(`<div class="hud-left">
       <div class="chip money pe">${ICONS.coin.replace('<svg', '<svg class="ico"')}<span class="mv">$0</span><span class="rate"></span></div>
       <div class="chip bag pe"><div class="row"><span>${ICONS.bag.replace('<svg', '<svg style="width:16px;height:16px;vertical-align:-3px"')} Tanque</span><span class="bv">0/20</span></div><div class="bar"><i></i></div></div>
+      <div class="chip evchip pe" style="display:none"></div>
+      <div class="chip alert pe" style="display:none"></div>
       <div class="chip contract pe" style="display:none"><div class="row"><span class="ct">📦 Contrato</span><span class="cd"></span></div><div class="cr"></div><div class="bar"><i></i></div></div>
       <div class="chip yard pe" style="display:none" title="Pátio do posto: o que as máquinas entregam espera aqui para ser processado"><div class="row"><span>⚙ Pátio</span><span class="yv">0/250</span></div><div class="bar"><i></i></div></div>
     </div>`);
     r.appendChild(left);
     this.el.left = left;
     left.querySelector('.contract')!.addEventListener('click', () => this.openModal('contracts'));
+    left.querySelector('.alert')!.addEventListener('click', () => this.goToAlert());
+    left.querySelector('.evchip')!.addEventListener('click', () => { const ev = this.game.worldEvent; if (ev && ev.kind !== 'ion') this.app.peek(ev.x, ev.y); });
+    this.pinLayer = h(`<div class="wpins"></div>`);
+    r.appendChild(this.pinLayer);
     const right = h(`<div class="hud-right"></div>`);
     for (const t of TABS) {
       const b = h(`<button class="mbtn" data-tab="${t.id}">${t.icon}<span class="tip">${t.name}</span><span class="dot"></span></button>`);
@@ -141,6 +147,7 @@ export class UI {
       (L.querySelector('.bag .bar i') as HTMLElement).style.width = (100 * p.carried) / g.d.capacity + '%';
       L.querySelector('.bag')!.classList.toggle('full', p.carried >= g.d.capacity);
       this.updateContractChip();
+      this.updateAlertChips();
       const yc = L.querySelector('.yard') as HTMLElement;
       const hasAuto = g.machines.machines.some((m) => MACHINES[m.type].buffer > 0 || g.yardTotal > 0);
       yc.style.display = hasAuto ? '' : 'none';
@@ -152,7 +159,9 @@ export class UI {
         yc.classList.toggle('full', yf >= 0.98);
         yc.classList.toggle('warn', yf >= 0.7 && yf < 0.98);
       }
-      this.el.goal.textContent = this.app.build ? '' : g.nextGoal();
+      const gd = g.guide();
+      this.el.goal.textContent = this.app.build ? '' : gd?.text ?? '';
+      this.el.right.querySelectorAll('.mbtn').forEach((b) => b.classList.toggle('guide', !!gd?.tab && (b as HTMLElement).dataset.tab === gd.tab));
       // notification dots
       const canUp = UPGRADES.some((u) => !g.canBuyUpgrade(u.id));
       const canTool = (g.toolTier + 1 < TOOLS.length && g.money >= g.toolCost(g.toolTier + 1)) || MODULES.some((m) => g.moduleState(m.id) === 'buy' && !g.missingFor({ money: m.money, mats: m.mats }));
@@ -191,6 +200,7 @@ export class UI {
       case 'openInventory': this.openModal('inventory'); break;
       case 'offers': this.newOffers = true; if (this.modalTab === 'contracts') this.renderModal(true); else this.message('Novas propostas de contrato chegaram. Toque em Contratos.', MAE); break;
       case 'sector': this.sectorBanner(e.name, e.money); break;
+      case 'worldEvent': this.message(e.text, MAE); if (e.ev) this.eventBanner(e.ev.title, e.text); break;
       case 'contract': this.contractBanner(e.ok, e.title, e.money, e.blueprint); if (this.modalTab === 'contracts') this.renderModal(true); break;
       case 'openMachine': this.select(this.game.machines.byId.get(e.id) ?? null); break;
       case 'ending': this.endingPopup(); break;
@@ -681,6 +691,97 @@ export class UI {
     setTimeout(() => b.remove(), 4200);
   }
 
+  private eventBanner(title: string, text: string) {
+    const b = h(`<div class="cbanner event"><div class="k">${esc(title.toUpperCase())}!</div><div class="t">${esc(text)}</div></div>`);
+    this.root.appendChild(b);
+    setTimeout(() => b.classList.add('out'), 3400);
+    setTimeout(() => b.remove(), 4000);
+  }
+
+  // ------------------------------------------------------------------ alerts + world pointers
+  private pinLayer!: HTMLElement;
+  private alertList: { text: string; x?: number; y?: number; machine?: number; tab?: Tab }[] = [];
+
+  private computeAlerts() {
+    const g = this.game;
+    const out: typeof this.alertList = [];
+    for (const c of g.contracts.active) {
+      const left = c.deadline - g.stats.playTime;
+      if (left < DAY / 2) out.push({ text: `Contrato vence em ${this.planetTime(left)}`, tab: 'contracts' });
+    }
+    if (g.yardSpace() <= 0) out.push({ text: 'Pátio do posto lotado: construa uma Prensa', x: centerX(g.depot) * TILE, y: centerY(g.depot) * TILE, tab: 'build' });
+    for (const m of g.machines.machines) {
+      if (isHub(m.type) || isBelt(m.type)) continue;
+      const cx = centerX(m) * TILE, cy = centerY(m) * TILE;
+      if (m.status === 'full' && !m.inService && !(m.outConveyor >= 0 && m.linked) && MACHINES[m.type].buffer > 0 && m.type !== 'robots') out.push({ text: `${MACHINES[m.type].short} cheio e sem entrega`, x: cx, y: cy, machine: m.id });
+      else if (m.type === 'collector' && m.idleT < 0) out.push({ text: 'Coletor parado: zona esgotada', x: cx, y: cy, machine: m.id });
+      if (out.length > 8) break;
+    }
+    this.alertList = out;
+  }
+
+  private updateAlertChips() {
+    const g = this.game;
+    this.computeAlerts();
+    const a = this.el.left.querySelector('.alert') as HTMLElement;
+    const first = this.alertList[0];
+    a.style.display = first ? '' : 'none';
+    if (first) {
+      const html = `⚠ ${esc(first.text)}${this.alertList.length > 1 ? ` <small>+${this.alertList.length - 1}</small>` : ''} <b>Ir ›</b>`;
+      if (a.innerHTML !== html) a.innerHTML = html;
+    }
+    const e = this.el.left.querySelector('.evchip') as HTMLElement;
+    const ev = g.worldEvent;
+    e.style.display = ev ? '' : 'none';
+    if (ev) {
+      const icon = ev.kind === 'meteor' ? '☄️' : ev.kind === 'ion' ? '⚡' : '📦';
+      const html = `${icon} ${esc(ev.title)} <b>${Math.max(0, Math.ceil(ev.until - g.stats.playTime))}s</b>${ev.kind !== 'ion' ? ' <b>Ir ›</b>' : ''}`;
+      if (e.innerHTML !== html) e.innerHTML = html;
+    }
+  }
+
+  private alertIdx = 0;
+  private goToAlert() {
+    if (!this.alertList.length) return;
+    const a = this.alertList[this.alertIdx++ % this.alertList.length];
+    if (a.machine !== undefined) { const m = this.game.machines.byId.get(a.machine); if (m) this.select(m); }
+    if (a.x !== undefined && a.y !== undefined) this.app.peek(a.x, a.y);
+    else if (a.tab) this.openModal(a.tab);
+  }
+
+  /** Arrows to the event and to the tutorial target; clamped to the screen edge when off-screen. */
+  updatePointers() {
+    const g = this.game;
+    const r = this.app.renderer;
+    const targets: { x: number; y: number; icon: string; label: string; cls: string }[] = [];
+    const ev = g.worldEvent;
+    if (ev && ev.kind !== 'ion') targets.push({ x: ev.x, y: ev.y, icon: ev.kind === 'meteor' ? '☄️' : '📦', label: `${Math.max(0, Math.ceil(ev.until - g.stats.playTime))}s`, cls: 'ev' });
+    const gd = this.app.build || this.modalTab ? null : g.guide();
+    if (gd && gd.x !== undefined && gd.y !== undefined) targets.push({ x: gd.x, y: gd.y, icon: '👇', label: '', cls: 'guide' });
+    const layer = this.pinLayer;
+    while (layer.children.length < targets.length) layer.appendChild(h(`<div class="wpin"><span class="ic"></span><span class="lb"></span><i class="ar"></i></div>`));
+    while (layer.children.length > targets.length) layer.lastElementChild!.remove();
+    const W = r.W, H = r.H, M = 44;
+    targets.forEach((t, i) => {
+      const el = layer.children[i] as HTMLElement;
+      const p = r.worldToScreen(t.x, t.y);
+      const inside = p.x > M && p.x < W - M && p.y > M + 40 && p.y < H - M;
+      let x = p.x, y = p.y, ang = 0;
+      if (!inside) {
+        const cx = W / 2, cy = H / 2, dx = p.x - cx, dy = p.y - cy;
+        const k = Math.min((W / 2 - M) / Math.max(1, Math.abs(dx)), (H / 2 - M - 20) / Math.max(1, Math.abs(dy)));
+        x = cx + dx * k; y = cy + dy * k;
+        ang = Math.atan2(dy, dx);
+      }
+      el.className = `wpin ${t.cls} ${inside ? 'on' : 'edge'}`;
+      el.style.transform = `translate(${Math.round(x)}px, ${Math.round(y)}px)`;
+      (el.querySelector('.ic') as HTMLElement).textContent = t.icon;
+      const dist = Math.round(Math.hypot(t.x - g.player.x, t.y - g.player.y) / TILE);
+      (el.querySelector('.lb') as HTMLElement).textContent = inside ? t.label : `${t.label ? t.label + ' · ' : ''}${dist} m`;
+      (el.querySelector('.ar') as HTMLElement).style.transform = `rotate(${ang}rad)`;
+    });
+  }
+
   private sectorBanner(name: string, money: number) {
     const b = h(`<div class="cbanner sector"><div class="k">SETOR RESTAURADO!</div><div class="t">${esc(name)} · os Glubs voltaram</div><div class="r"><span>+${fmtMoney(money)}</span></div></div>`);
     this.root.appendChild(b);
@@ -710,8 +811,17 @@ export class UI {
     this.newOffers = false;
     const lvl = cb.level;
     const stars = '★'.repeat(Math.min(10, lvl)) + '☆'.repeat(Math.max(0, 10 - lvl));
-    let html = `<div class="chead"><div class="rep"><span class="lv">Nível ${lvl}</span><span class="stars">${stars}</span><small>Reputação ${cb.rep} · ${cb.completed} entregues${cb.failed ? ` · ${cb.failed} vencidos` : ''}</small></div><div class="clock">🪐 Dia ${g.day} · ${String(Math.floor(g.hour)).padStart(2, '0')}h<small>1 dia = ${DAY / 60} min</small></div></div>`;
+    let html = `<div class="chead"><div class="rep"><span class="lv">Nível ${lvl}</span><span class="stars">${stars}</span><small>Reputação ${cb.rep} · ${cb.completed} entregues${cb.failed ? ` · ${cb.failed} vencidos` : ''}</small>${cb.streak > 0 ? `<span class="streak">🔥 Sequência ${cb.streak} · pagamentos ×${cb.streakMult.toFixed(1)}</span>` : ''}</div><div class="clock">🪐 Dia ${g.day} · ${String(Math.floor(g.hour)).padStart(2, '0')}h<small>1 dia = ${DAY / 60} min</small></div></div>`;
     if (!cb.started) html += `<p class="lead">A MÃE ainda não ligou. Colete um pouco de sucata enquanto isso.</p>`;
+    const wk = cb.weekly;
+    if (wk) {
+      const done = wk.delivered >= wk.need;
+      const left = (wk.week + 1) * DAY * 7 - g.stats.playTime;
+      const can = !done && g.storage[wk.mat] >= 1;
+      html += `<div class="weekly ${done ? 'done' : ''}"><div class="wk-h"><b>🏆 Meta da semana</b><span>${done ? 'Cumprida!' : `termina em ${this.planetTime(left)}`}</span></div>
+        <div class="wk-b"><img class="mi big" src="${matIconURL(wk.mat)}" alt=""/><div class="wk-p"><div class="q"><b>${fmtInt(wk.delivered)}</b>/${fmtInt(wk.need)} ${MATERIALS[wk.mat].name}</div><div class="rb"><i style="width:${Math.min(100, (100 * wk.delivered) / wk.need)}%;background:${MATERIALS[wk.mat].color}"></i></div></div>
+        <div class="wk-r">${wk.cores} 💠 + ${fmtMoney(wk.money)}</div>${can ? `<button class="btn green" data-weekly>Entregar ${fmtShort(Math.min(g.storage[wk.mat], wk.need - wk.delivered))}</button>` : ''}</div></div>`;
+    }
     const act = cb.active;
     html += `<h3 class="mrole coleta">Em andamento <small>${act.length}/${cb.slots} vagas · entregue automaticamente quando os silos tiverem tudo</small></h3><div class="cgrid">`;
     if (!act.length && cb.started) html += `<div class="cempty">Nenhum contrato ativo. Aceite uma proposta abaixo.</div>`;
@@ -727,7 +837,7 @@ export class UI {
     html += `<h3 class="mrole logistica">Propostas de hoje <small>${cb.completed < 1 ? 'chegam depois do contrato de boas-vindas' : 'renovam todo dia'}</small></h3><div class="cgrid">`;
     for (const c of offers) {
       const full = act.length >= cb.slots;
-      html += `<div class="ccard offer ${c.blueprint ? 'hasbp' : ''}"><div class="ch"><b>${esc(c.title)}</b><span class="tl">⏱ ${c.days} dia${c.days > 1 ? 's' : ''}<small>≈ ${fmtTime(c.days * DAY)}</small></span></div>
+      html += `<div class="ccard offer ${c.blueprint ? 'hasbp' : ''} ${c.rush ? 'rush' : ''}"><div class="ch"><b>${esc(c.title)}</b><span class="tl">⏱ ${c.days} dia${c.days > 1 ? 's' : ''}<small>≈ ${fmtTime(c.days * DAY)}</small></span></div>
         ${this.reqRows(c.req, null)}
         <div class="cf"><span class="rw"><b>${fmtMoney(c.money)}</b> · +${c.rep}★${c.blueprint ? ` · <b class="bp">📐 Planta: ${esc(MODULE_MAP[c.blueprint].name)}</b>` : ''}</span><button class="btn ${full ? 'disabled' : 'green'}" data-accept="${c.id}">${full ? 'Sem vaga' : 'Aceitar'}</button></div></div>`;
     }
@@ -739,6 +849,7 @@ export class UI {
       if (e) { this.flash(b); this.message(e, MAE); }
       this.renderModal(true);
     }));
+    body.querySelector('[data-weekly]')?.addEventListener('click', () => { g.deliverWeekly(); this.renderModal(true); });
     body.querySelectorAll('[data-deliver]').forEach((b) => b.addEventListener('click', () => {
       g.deliverContract(Number((b as HTMLElement).dataset.deliver));
       this.renderModal(true);
@@ -764,15 +875,18 @@ export class UI {
     const g = this.game;
     const d = g.d;
     let html = `<div class="wtop"><img class="bip" src="${this.robotPreview()}" alt=""/><div class="wstats"><div class="wt">BIP <small>robô modular</small></div>
-      <div class="kvs"><span>Velocidade</span><b>${d.moveSpeed.toFixed(1)}</b><span>Na sucata</span><b>${Math.round((1 - d.garbageSlow) * 100)}%</b><span>Tanque</span><b>${fmtInt(d.capacity)}</b><span>Braço</span><b>${esc(g.tool.name)}</b></div>
-      <p class="muted">Troque as peças quando quiser: cada módulo muda o visual e o jeito de jogar. Plantas 📐 vêm de contratos.</p></div></div>`;
+      <div class="kvs"><span>Núcleos Raros</span><b>💠 ${g.cores}</b><span></span><b></b><span>Velocidade</span><b>${d.moveSpeed.toFixed(1)}</b><span>Na sucata</span><b>${Math.round((1 - d.garbageSlow) * 100)}%</b><span>Tanque</span><b>${fmtInt(d.capacity)}</b><span>Braço</span><b>${esc(g.tool.name)}</b></div>
+      <p class="muted">Cada módulo muda o visual e o jeito de jogar. Plantas 📐 vêm de contratos; Núcleos 💠 vêm das metas da semana e deixam a peça Rara ★ e Lendária ★★ (locomoção: +7% velocidade, tanque: +12% carga, sensor: +6% valor por estrela).</p></div></div>`;
     for (const slot of ['move', 'tank', 'sensor'] as ModuleSlot[]) {
       html += `<h3 class="mrole processamento">${SLOT_NAMES[slot]}</h3><div class="wgrid">`;
       for (const m of MODULES.filter((x) => x.slot === slot)) {
         const st = g.moduleState(m.id);
         const miss = st === 'buy' ? g.missingFor({ money: m.money, mats: m.mats }) : null;
-        html += `<div class="wcard ${st}"><div class="wn">${esc(m.name)}${st === 'equipped' ? '<span class="own cur">EM USO</span>' : ''}</div><div class="wd">${esc(m.desc)}</div>
-          <div class="wf">${st === 'equipped' ? '' : st === 'owned' ? `<button class="btn" data-eq="${m.id}">Equipar</button>` : st === 'locked' ? `<span class="lock">📐 Planta vem de contrato</span>` : `<span class="costs">${this.costHtml({ money: m.money, mats: m.mats })}</span><button class="btn ${miss ? 'disabled' : 'green'}" data-mod="${m.id}">Comprar</button>`}</div></div>`;
+        const stars = g.moduleStars[m.id] || 0;
+        const sc = g.starCost(m.id);
+        const starUp = st === 'equipped' || st === 'owned' ? (stars < 2 ? `<button class="btn ghost star" data-star="${m.id}" title="${['Comum', 'Raro', 'Lendário'][stars + 1]}">★ Evoluir · ${sc.cores}💠 ${fmtMoney(sc.money)}</button>` : '<span class="rar">LENDÁRIO</span>') : '';
+        html += `<div class="wcard ${st} r${stars}"><div class="wn">${esc(m.name)}<span class="stars">${'★'.repeat(stars)}${'☆'.repeat(2 - stars)}</span>${st === 'equipped' ? '<span class="own cur">EM USO</span>' : ''}</div><div class="wd">${esc(m.desc)}</div>
+          <div class="wf">${starUp}${st === 'equipped' ? '' : st === 'owned' ? `<button class="btn" data-eq="${m.id}">Equipar</button>` : st === 'locked' ? `<span class="lock">📐 Planta vem de contrato</span>` : `<span class="costs">${this.costHtml({ money: m.money, mats: m.mats })}</span><button class="btn ${miss ? 'disabled' : 'green'}" data-mod="${m.id}">Comprar</button>`}</div></div>`;
       }
       html += `</div>`;
     }
@@ -798,6 +912,11 @@ export class UI {
     body.querySelectorAll('[data-mod]').forEach((b) => b.addEventListener('click', () => {
       const e = g.buyModule((b as HTMLElement).dataset.mod!);
       if (e) this.flash(b);
+      this.renderModal(true);
+    }));
+    body.querySelectorAll('[data-star]').forEach((b) => b.addEventListener('click', () => {
+      const e = g.upgradeModuleStar((b as HTMLElement).dataset.star!);
+      if (e) { this.flash(b); this.toastErr(e); }
       this.renderModal(true);
     }));
     body.querySelectorAll('[data-eq]').forEach((b) => b.addEventListener('click', () => {

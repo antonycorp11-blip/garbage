@@ -25,7 +25,11 @@ export interface Contract {
   rep: number;
   blueprint: string | null;
   state: ContractState;
+  /** urgent: half the time, double pay */
+  rush?: boolean;
 }
+
+export interface Weekly { week: number; mat: number; need: number; delivered: number; cores: number; money: number }
 
 export interface ContractHost {
   readonly playTime: number;
@@ -51,6 +55,12 @@ export class ContractBoard {
   offerDay = -1;
   /** the tutorial contract has been handed out */
   started = false;
+  /** contracts delivered in a row without a failure */
+  streak = 0;
+  weekly: Weekly | null = null;
+
+  /** payout multiplier from the current streak */
+  get streakMult() { return 1 + Math.min(0.5, 0.1 * this.streak); }
 
   get level() {
     let l = 0;
@@ -90,6 +100,8 @@ export class ContractBoard {
     for (let i = 0; i < n; i++) {
       const c = this.generate(h, i);
       if (i === 0 && bpIdx >= 0) { c.blueprint = BLUEPRINT_ORDER[bpIdx]; c.days += 1; c.money = Math.round(c.money * 0.8); }
+      // one risky offer a day: half the time, double the pay
+      if (i === 1 && this.level >= 1) { c.rush = true; c.days = Math.max(0.5, c.days / 2); c.money *= 2; c.rep += 1; c.title = 'URGENTE: ' + c.title; }
       this.list.push(c);
     }
     return true;
@@ -154,8 +166,18 @@ export class ContractBoard {
 
   remove(c: Contract) { this.list = this.list.filter((x) => x !== c); }
 
+  /** A big goal every planet week: one material, paid in Rare Cores. */
+  refreshWeekly(h: ContractHost) {
+    const week = Math.floor(h.playTime / (DAY * 7));
+    if (this.weekly && this.weekly.week === week) return false;
+    const mat = Math.floor(Math.random() * 5);
+    const need = round5(Math.max(300, Math.max(3, h.ratePerSec) * DAY * 7 * 0.06 * (1 + 0.1 * this.level)));
+    this.weekly = { week, mat, need, delivered: 0, cores: 1 + Math.floor(this.level / 3), money: Math.round(need * h.value[mat] * 3) };
+    return true;
+  }
+
   serialize() {
-    return { list: this.list.map((c) => ({ ...c, req: c.req.slice(), delivered: c.delivered.slice() })), rep: this.rep, completed: this.completed, failed: this.failed, nextId: this.nextId, offerDay: this.offerDay, started: this.started };
+    return { list: this.list.map((c) => ({ ...c, req: c.req.slice(), delivered: c.delivered.slice() })), rep: this.rep, completed: this.completed, failed: this.failed, nextId: this.nextId, offerDay: this.offerDay, started: this.started, streak: this.streak, weekly: this.weekly ? { ...this.weekly } : null };
   }
 
   load(raw: unknown) {
@@ -165,8 +187,11 @@ export class ContractBoard {
     const arr = (v: unknown) => Array.from({ length: MAT_COUNT }, (_, i) => Math.max(0, n(Array.isArray(v) ? v[i] : 0)));
     this.list = (Array.isArray(s.list) ? s.list : []).filter((c) => c && (c.state === 'offer' || c.state === 'active')).map((c) => ({
       id: n(c.id), title: String(c.title || 'Contrato'), req: arr(c.req), delivered: arr(c.delivered), days: n(c.days, 1), deadline: n(c.deadline),
-      money: n(c.money), rep: n(c.rep, 1), blueprint: typeof c.blueprint === 'string' && MODULE_MAP[c.blueprint] ? c.blueprint : null, state: c.state,
+      money: n(c.money), rep: n(c.rep, 1), blueprint: typeof c.blueprint === 'string' && MODULE_MAP[c.blueprint] ? c.blueprint : null, state: c.state, rush: !!c.rush,
     }));
+    this.streak = n(s.streak);
+    const wk = s.weekly as Weekly | null | undefined;
+    this.weekly = wk && typeof wk === 'object' ? { week: n(wk.week), mat: Math.max(0, Math.min(4, n(wk.mat))), need: n(wk.need, 300), delivered: n(wk.delivered), cores: n(wk.cores, 1), money: n(wk.money) } : null;
     this.rep = n(s.rep); this.completed = n(s.completed); this.failed = n(s.failed);
     this.nextId = Math.max(n(s.nextId, 1), ...this.list.map((c) => c.id + 1));
     this.offerDay = n(s.offerDay, -1);

@@ -20,6 +20,8 @@ export interface SaveData {
   ownedModules?: string[];
   blueprints?: string[];
   contracts?: unknown;
+  cores?: number;
+  moduleStars?: Record<string, number>;
   storyStep?: number;
   upgrades: Record<string, number>;
   flags: Record<string, boolean>;
@@ -51,6 +53,8 @@ export function serialize(g: Game): SaveData {
     ownedModules: g.ownedModules.slice(),
     blueprints: g.blueprints.slice(),
     contracts: g.contracts.serialize(),
+    cores: g.cores,
+    moduleStars: { ...g.moduleStars },
     storyStep: g.storyStep,
     upgrades: { ...g.upgrades },
     flags: { ...g.flags },
@@ -83,6 +87,9 @@ export function applySave(g: Game, raw: unknown): void {
   g.ownedModules = Array.from(new Set([...Object.values(DEFAULT_LOADOUT), ...ids(s.ownedModules)]));
   g.blueprints = ids(s.blueprints);
   g.contracts.load(s.contracts);
+  g.cores = Math.max(0, Math.floor(num(s.cores)));
+  g.moduleStars = {};
+  for (const [k, v] of Object.entries(s.moduleStars || {})) if (MODULE_MAP[k]) g.moduleStars[k] = Math.max(0, Math.min(2, Math.floor(num(v))));
   g.storyStep = Math.max(0, Math.floor(num(s.storyStep)));
   for (const slot of Object.keys(DEFAULT_LOADOUT) as ModuleSlot[]) {
     const id = s.loadout?.[slot];

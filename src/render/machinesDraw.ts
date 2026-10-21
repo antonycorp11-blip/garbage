@@ -272,6 +272,9 @@ export function drawMachine(c: C, m: Machine, g: Game, time: number, fx: Effects
     case 'recycler': drawRecycler(c, x, y, time, fx, onScreen, g); break;
     case 'beacon': drawBeacon(c, m, x, y, time, g, fx, onScreen); break;
     case 'ancient': drawAncient(c, m, x, y, time, working, fx, onScreen); break;
+    case 'harvester': drawHarvesterGarage(c, m, x, y, time); break;
+    case 'drill': drawDrill(c, m, x, y, time, working, fx, onScreen); break;
+    case 'vortex': drawVortexEmitter(c, m, x, y, time); break;
     default: break;
   }
   c.restore();
@@ -575,6 +578,8 @@ function drawStation(c: C, m: Machine, x: number, y: number, time: number) {
 export function drawBots(c: C, m: Machine, time: number, fx: Effects, onScreen: boolean) {
   for (const b of m.bots) {
     if (m.type === 'excavator') drawExcavatorVehicle(c, b, time, fx, onScreen);
+    else if (m.type === 'harvester') drawRover(c, b, time, fx, onScreen);
+    else if (m.type === 'vortex') drawVortex(c, m, b, time, fx, onScreen);
     else drawBot(c, b, time, fx, onScreen);
   }
 }
@@ -1118,3 +1123,362 @@ export function drawRange(c: C, cx: number, cy: number, r: number, color: string
 }
 
 export { rivet, cable };
+
+// =====================================================================================================
+// HARVESTER — alien farm barn + chunky sweeper rovers
+// =====================================================================================================
+function harvGarageBase(level: number) {
+  return cachedLayer(`harv1-${level}`, -10, -46, 86, 118, (c) => {
+    groundShadow(c, 32, 60, 36, 10, 0.42);
+    // deck with hazard lip
+    rrect(c, -4, 32, 72, 34, 6); c.fillStyle = SCI.violetD; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+    rrect(c, -4, 30, 72, 32, 6); c.fillStyle = '#5b4f80'; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+    c.save(); rrect(c, -4, 30, 72, 32, 6); c.clip(); hazardStripes(c, -4, 58, 72, 4, SCI.orange, SCI.violetD); c.restore();
+    // tire tracks leaving the door
+    c.strokeStyle = 'rgba(255,255,255,0.1)'; c.lineWidth = 3.4; c.setLineDash([2.5, 2.5]);
+    for (const tx of [22, 42]) { c.beginPath(); c.moveTo(tx, 38); c.lineTo(tx, 60); c.stroke(); }
+    c.setLineDash([]);
+    // barn body
+    rrect(c, 4, 0, 56, 36, 3); c.fillStyle = SCI.shell; c.fill();
+    c.save(); rrect(c, 4, 0, 56, 36, 3); c.clip();
+    c.fillStyle = shade(SCI.shell, -0.14); c.fillRect(42, 0, 20, 36);
+    c.strokeStyle = shade(SCI.shell, -0.2); c.lineWidth = 0.8;
+    for (let i = 8; i < 60; i += 5) { c.beginPath(); c.moveTo(i, 0); c.lineTo(i, 36); c.stroke(); }
+    c.restore();
+    rrect(c, 4, 0, 56, 36, 3); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+    // gambrel roof (orange)
+    const roof = () => { c.beginPath(); c.moveTo(0, 2); c.lineTo(8, -16); c.lineTo(32, -26); c.lineTo(56, -16); c.lineTo(64, 2); c.closePath(); };
+    roof(); c.fillStyle = SCI.orange; c.fill();
+    c.save(); roof(); c.clip();
+    c.fillStyle = SCI.orangeD; c.fillRect(32, -30, 40, 40);
+    c.strokeStyle = 'rgba(80,30,0,0.35)'; c.lineWidth = 0.8;
+    for (let i = -24; i < 4; i += 4) { c.beginPath(); c.moveTo(0, i); c.lineTo(64, i); c.stroke(); }
+    c.fillStyle = 'rgba(255,255,255,0.35)'; c.beginPath(); c.moveTo(9, -14); c.lineTo(30, -23); c.lineTo(30, -20); c.lineTo(11, -11); c.closePath(); c.fill();
+    c.restore();
+    roof(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+    // teal trim + hay-loft window with a little rover emblem
+    c.fillStyle = SCI.teal; c.fillRect(4, 1, 56, 2.2);
+    c.beginPath(); c.arc(32, -12, 6, 0, 6.28); c.fillStyle = '#173246'; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.9; c.stroke();
+    c.strokeStyle = SCI.cyan; c.lineWidth = 0.9; c.beginPath(); c.arc(32, -12, 4, 0, 6.28); c.stroke();
+    c.fillStyle = SCI.gold; c.beginPath(); c.arc(30.2, -10.6, 1.2, 0, 6.28); c.arc(33.8, -10.6, 1.2, 0, 6.28); c.fill();
+    rrect(c, 29.4, -14.8, 5.2, 3.6, 1.2); c.fill();
+    // door frame
+    rrect(c, 13, 8, 38, 28, 3); c.fillStyle = '#17132a'; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+    hazardStripes(c, 13, 5, 38, 3, SCI.orange, SCI.violetD);
+    // sign
+    rrect(c, 17, -34, 30, 8, 3); c.fillStyle = SCI.teal; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.9; c.stroke();
+    stencil(c, 'COLHEITA', 32, -29.8, 3.6, 'rgba(0,40,36,0.9)');
+    pipe(c, [24, -26, 24, -22], 1, SCI.violet); pipe(c, [40, -26, 40, -22], 1, SCI.violet);
+    // fuel silo pod
+    cylinder34(c, 68, 6, 5, 26, SCI.shell, 2);
+    c.fillStyle = SCI.orange; c.fillRect(63.2, 16, 9.6, 3);
+    levelPips(c, 32, 65, level);
+  });
+}
+
+function drawHarvesterGarage(c: C, m: Machine, x: number, y: number, time: number) {
+  blit(c, harvGarageBase(m.level), x, y);
+  // the roller door rises when a rover is near
+  let near = 99;
+  for (const b of m.bots) near = Math.min(near, Math.hypot(b.x - (m.tx + 1), b.y - (m.ty + 1.6)));
+  const open = m.bots.length ? Math.max(0, Math.min(1, 1.8 - near * 0.6)) : 0;
+  const dh = 28 * (1 - open * 0.85);
+  c.save(); rrect(c, x + 13, y + 8, 38, 28, 3); c.clip();
+  c.fillStyle = lin(c, 0, y + 8, 0, y + 8 + dh, [[0, '#ffe2bf'], [1, '#e8a564']]);
+  c.fillRect(x + 13, y + 8, 38, dh);
+  c.fillStyle = 'rgba(90,40,0,0.22)'; for (let i = y + 10; i < y + 8 + dh; i += 3) c.fillRect(x + 13, i, 38, 0.7);
+  c.restore();
+  // landing lights chase toward the door
+  for (let i = 0; i < 4; i++) {
+    const on = Math.floor(time * 6) % 4 === 3 - i;
+    lamp(c, x + 9, y + 38 + i * 6, SCI.cyan, on, 0.8);
+    lamp(c, x + 55, y + 38 + i * 6, SCI.cyan, on, 0.8);
+  }
+  lamp(c, x + 6, y - 2, statusColor(m), true, 1.2);
+  // rover count badge
+  const n = m.bots.length;
+  if (n > 1) {
+    rrect(c, x + 47, y - 30, 10, 8, 3); c.fillStyle = SCI.violetD; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.8; c.stroke();
+    c.fillStyle = SCI.cyan; c.font = '900 6.5px system-ui'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(String(n), x + 52, y - 25.8);
+  }
+}
+
+function knobWheel(c: C, x: number, y: number, r: number, roll: number) {
+  c.beginPath(); c.arc(x, y, r, 0, 6.28); c.fillStyle = '#2b2440'; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.9; c.stroke();
+  c.fillStyle = '#4a4068';
+  for (let i = 0; i < 8; i++) {
+    const a = roll + (i / 8) * 6.28;
+    c.save(); c.translate(x + Math.cos(a) * r, y + Math.sin(a) * r); c.rotate(a);
+    c.fillRect(-1, -1.3, 2, 2.6); c.restore();
+  }
+  c.beginPath(); c.arc(x, y, r * 0.48, 0, 6.28); c.fillStyle = SCI.orange; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.7; c.stroke();
+  c.fillStyle = SCI.shell; c.beginPath(); c.arc(x, y, r * 0.18, 0, 6.28); c.fill();
+}
+
+function drawRover(c: C, b: Bot, time: number, fx: Effects, onScreen: boolean) {
+  const x = b.x * TILE, y = b.y * TILE;
+  const working = b.state === BOT_WORK;
+  const moving = b.state === BOT_GO || b.state === BOT_RETURN;
+  const ang = b.angle;
+  const bob = moving ? Math.abs(Math.sin(time * 14 + b.anim)) * 0.8 : 0;
+  groundShadow(c, x + 2, y + 5, 18, 10, 0.4);
+  c.save();
+  c.translate(x, y - bob);
+  c.rotate(ang);
+  // headlight cones
+  if (moving || working) {
+    c.save(); c.globalCompositeOperation = 'lighter';
+    c.fillStyle = lin(c, 14, 0, 34, 0, [[0, 'rgba(255,240,180,0.35)'], [1, 'rgba(255,240,180,0)']]);
+    for (const sy of [-5, 5]) { c.beginPath(); c.moveTo(13, sy); c.lineTo(34, sy - 7); c.lineTo(34, sy + 7); c.closePath(); c.fill(); }
+    c.restore();
+  }
+  // wheels (knobby, rolling)
+  const roll = moving ? time * 9 : working ? time * 2 : 0;
+  for (const [wx, wy] of [[-8, -10], [6, -10], [-8, 10], [6, 10]]) knobWheel(c, wx, wy, 4.4, roll);
+  // chassis
+  rrect(c, -14, -8, 26, 16, 5); c.fillStyle = SCI.shell; c.fill();
+  c.save(); rrect(c, -14, -8, 26, 16, 5); c.clip();
+  c.fillStyle = shade(SCI.shell, -0.15); c.fillRect(-14, 3, 26, 6);
+  c.fillStyle = SCI.teal; c.fillRect(-14, -1.2, 26, 2.4);
+  c.restore();
+  rrect(c, -14, -8, 26, 16, 5); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+  // hopper on top: glass box with what it carries
+  rrect(c, -12, -6, 13, 12, 3); c.fillStyle = 'rgba(200,240,255,0.3)'; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.9; c.stroke();
+  if (b.carryTotal > 0) {
+    let m1 = 0, m2 = -1;
+    for (let k = 1; k < MAT_COUNT; k++) if (b.carry[k] > b.carry[m1]) m1 = k;
+    for (let k = 0; k < MAT_COUNT; k++) if (k !== m1 && b.carry[k] > 0 && (m2 < 0 || b.carry[k] > b.carry[m2])) m2 = k;
+    c.save(); c.rotate(-ang);
+    const hx = Math.cos(ang) * -5.5, hy = Math.sin(ang) * -5.5;
+    if (m2 >= 0) drawMatIcon(c, m2, hx + 2.4, hy + 1.6, 6);
+    drawMatIcon(c, m1, hx - 1.2, hy - 0.6, 7.5);
+    c.restore();
+  }
+  c.fillStyle = 'rgba(255,255,255,0.55)'; c.fillRect(-11, -5, 3, 1.4);
+  // cab with a cute eye
+  c.beginPath(); c.arc(5, 0, 5, 0, 6.28); c.fillStyle = SCI.orange; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.9; c.stroke();
+  c.beginPath(); c.arc(6, 0, 3.2, 0, 6.28); c.fillStyle = '#16122a'; c.fill();
+  c.fillStyle = working ? SCI.gold : SCI.cyan; c.beginPath(); c.arc(6.6, 0, 1.7, 0, 6.28); c.fill();
+  c.fillStyle = '#fff'; c.beginPath(); c.arc(6, -0.7, 0.55, 0, 6.28); c.fill();
+  // headlights
+  lamp(c, 12.5, -5, '#fff2c0', moving || working, 1.1); lamp(c, 12.5, 5, '#fff2c0', moving || working, 1.1);
+  // front sweeper reel (spins while working)
+  rrect(c, 13, -10, 3, 20, 1.4); c.fillStyle = SCI.violet; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.7; c.stroke();
+  const spin = working ? time * 14 : moving ? time * 3 : 0;
+  rrect(c, 16, -11, 7, 22, 3.4); c.fillStyle = SCI.orange; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.9; c.stroke();
+  c.save(); rrect(c, 16, -11, 7, 22, 3.4); c.clip();
+  c.strokeStyle = SCI.orangeD; c.lineWidth = 1.4;
+  for (let i = -3; i < 8; i++) { const yy = -11 + (((i * 4 + spin * 4) % 26) + 26) % 26; c.beginPath(); c.moveTo(16, yy); c.lineTo(23, yy - 3); c.stroke(); }
+  c.restore();
+  // antenna flag
+  c.strokeStyle = INK; c.lineWidth = 0.6; c.beginPath(); c.moveTo(-10, 6); c.lineTo(-14, 11); c.stroke();
+  c.fillStyle = SCI.cyan; c.beginPath(); c.arc(-14, 11, 1, 0, 6.28); c.fill();
+  c.restore();
+  if (onScreen) {
+    if (working && Math.random() < 0.45) fx.burst(x + Math.cos(ang) * 20, y + Math.sin(ang) * 20, 'dust', 1);
+    if (moving && Math.random() < 0.18) fx.burst(x - Math.cos(ang) * 14, y - Math.sin(ang) * 14 + 6, 'dust', 1);
+  }
+}
+
+// =====================================================================================================
+// SEISMIC DRILL (3x3) — derrick tower, spinning bit, ground pulses
+// =====================================================================================================
+function drillBase(level: number) {
+  return cachedLayer(`drill1-${level}`, -14, -78, 126, 192, (c) => {
+    groundShadow(c, 48, 90, 54, 14, 0.45);
+    // cracked ground around the bore
+    c.strokeStyle = 'rgba(30,18,40,0.55)'; c.lineWidth = 1.2; c.lineCap = 'round';
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * 6.28 + 0.3;
+      let px = 48 + Math.cos(a) * 30, py = 66 + Math.sin(a) * 18;
+      c.beginPath(); c.moveTo(px, py);
+      for (let k = 0; k < 3; k++) { px += Math.cos(a + (k % 2 ? 0.5 : -0.4)) * 7; py += Math.sin(a + (k % 2 ? 0.5 : -0.4)) * 4; c.lineTo(px, py); }
+      c.stroke();
+    }
+    // octagonal deck
+    const oct = (oy: number, r: number) => { c.beginPath(); for (let i = 0; i < 8; i++) { const a = (i / 8) * 6.28 + Math.PI / 8; c.lineTo(48 + Math.cos(a) * r, 64 + oy + Math.sin(a) * r * 0.55); } c.closePath(); };
+    oct(4, 46); c.fillStyle = SCI.violetD; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+    oct(0, 46); c.fillStyle = '#5b4f80'; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+    c.save(); oct(0, 46); c.clip();
+    c.strokeStyle = SCI.orange; c.lineWidth = 3; c.setLineDash([5, 5]); oct(0, 40); c.stroke(); c.setLineDash([]);
+    c.restore();
+    // bore hole
+    ellipse(c, 48, 66, 13, 7); c.fillStyle = '#120d1e'; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+    ellipse(c, 48, 66, 13, 7); c.strokeStyle = SCI.cyanD; c.lineWidth = 1; c.stroke();
+    // derrick legs (lattice)
+    const legs: [number, number][] = [[18, 60], [78, 60], [30, 50], [66, 50]];
+    for (const [lx, ly] of legs) {
+      c.strokeStyle = INK; c.lineWidth = 4; c.beginPath(); c.moveTo(lx, ly); c.lineTo(48 + (lx - 48) * 0.18, -50); c.stroke();
+      c.strokeStyle = lx < 48 ? SCI.shell : SCI.shellD; c.lineWidth = 2.4; c.beginPath(); c.moveTo(lx, ly); c.lineTo(48 + (lx - 48) * 0.18, -50); c.stroke();
+    }
+    // cross braces
+    c.strokeStyle = SCI.orange; c.lineWidth = 1.2;
+    for (let i = 0; i < 4; i++) {
+      const t0 = i / 4, t1 = (i + 1) / 4;
+      const L = (t: number, lx: number) => 48 + (lx - 48) * (1 - t * 0.82);
+      const Y = (t: number) => 60 - t * 110;
+      c.beginPath(); c.moveTo(L(t0, 18), Y(t0)); c.lineTo(L(t1, 78), Y(t1)); c.moveTo(L(t0, 78), Y(t0)); c.lineTo(L(t1, 18), Y(t1)); c.stroke();
+    }
+    // crown block
+    rrect(c, 36, -60, 24, 12, 3); c.fillStyle = SCI.orange; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+    hazardStripes(c, 36, -50, 24, 3, SCI.orange, SCI.violetD);
+    lamp(c, 48, -64, '#ff5050', true, 1.4);
+    // power house on the side
+    shell(c, 78, 20, 20, 30, SCI.shell, 5);
+    glass(c, 82, 25, 12, 8, '#173246', 2);
+    vent(c, 81, 38, 14, 8, 3);
+    cable(c, 80, 30, 58, 48, 6, SCI.violet, 1.6);
+    // hopper bin on the other side
+    poly(c, [-6, 24, 18, 24, 15, 50, -3, 50]); c.fillStyle = SCI.teal; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+    c.fillStyle = '#17132a'; poly(c, [-3, 26, 15, 26, 13, 31, -1, 31]); c.fill();
+    stencil(c, 'SÍSMICA', 6, 42, 3.4, 'rgba(0,40,36,0.85)');
+    levelPips(c, 48, 98, level);
+  });
+}
+
+function drawDrill(c: C, m: Machine, x: number, y: number, time: number, working: boolean, fx: Effects, onScreen: boolean) {
+  // seismic rings on the ground (behind the tower)
+  if (working) {
+    for (let i = 0; i < 3; i++) {
+      const k = ((time / 1.2) + i / 3) % 1;
+      c.strokeStyle = `rgba(95,242,255,${0.55 * (1 - k)})`; c.lineWidth = 2 * (1 - k) + 0.5;
+      ellipse(c, x + 48, y + 66, 14 + k * 70, 7 + k * 38); c.stroke();
+    }
+  }
+  blit(c, drillBase(m.level), x, y);
+  // drill string + spinning bit going down into the bore
+  const spin = working ? time * 9 : 0;
+  const plunge = working ? Math.sin(time * 5) * 2 : 0;
+  rrect(c, x + 45.5, y - 46, 5, 104 + plunge, 1.5); c.fillStyle = '#b9c2c7'; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.9; c.stroke();
+  c.save(); rrect(c, x + 45.5, y - 46, 5, 104 + plunge, 1.5); c.clip();
+  c.strokeStyle = 'rgba(40,30,60,0.45)'; c.lineWidth = 1;
+  for (let i = -2; i < 30; i++) { const yy = y - 46 + (((i * 4 + spin * 6) % 108) + 108) % 108; c.beginPath(); c.moveTo(x + 45, yy); c.lineTo(x + 51, yy + 2.5); c.stroke(); }
+  c.restore();
+  // rotary table
+  ellipse(c, x + 48, y + 58 + plunge, 9, 4.5); c.fillStyle = SCI.orange; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.9; c.stroke();
+  for (let i = 0; i < 4; i++) { const a = spin + i * 1.57; c.fillStyle = SCI.orangeD; c.beginPath(); c.arc(x + 48 + Math.cos(a) * 6.5, y + 58 + plunge + Math.sin(a) * 3.2, 1.2, 0, 6.28); c.fill(); }
+  // pistons pumping on both sides
+  for (const sx of [24, 72]) {
+    const ext = working ? (Math.sin(time * 5 + (sx > 48 ? 1.6 : 0)) + 1) * 3 : 0;
+    rrect(c, x + sx - 3, y + 24, 6, 18, 2); c.fillStyle = SCI.violet; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.9; c.stroke();
+    rrect(c, x + sx - 1.4, y + 14 - ext, 2.8, 12 + ext, 1); c.fillStyle = '#d6dde2'; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.7; c.stroke();
+  }
+  // hopper contents
+  if (m.bufferTotal > 0) {
+    let mi = 0;
+    for (let k = 1; k < MAT_COUNT; k++) if (m.buffer[k] > m.buffer[mi]) mi = k;
+    drawMatIcon(c, mi, x + 6, y + 27, 9);
+  }
+  lamp(c, x + 88, y + 18, statusColor(m), Math.sin(time * 4 + m.id) > -0.3, 1.4);
+  if (working && onScreen) {
+    if (Math.random() < 0.3) fx.burst(x + 48 + (Math.random() - 0.5) * 20, y + 66, 'dust', 1);
+    if (Math.random() < 0.03) fx.shake(0.25);
+  }
+}
+
+// =====================================================================================================
+// VORTEX — ancient emitter + roaming plasma whirl
+// =====================================================================================================
+const vortexBase = () => cachedLayer('vortex1', -10, -52, 86, 124, (c) => {
+  groundShadow(c, 32, 58, 34, 10, 0.42);
+  // jade ancient plinth
+  const JADE = '#3fae8f', JADED = '#1f6b58';
+  const hex = (oy: number, r: number) => { c.beginPath(); for (let i = 0; i < 6; i++) { const a = (i / 6) * 6.28 + Math.PI / 6; c.lineTo(32 + Math.cos(a) * r, 46 + oy + Math.sin(a) * r * 0.55); } c.closePath(); };
+  hex(6, 34); c.fillStyle = JADED; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+  hex(0, 34); c.fillStyle = JADE; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+  hex(0, 24); c.fillStyle = SCI.violet; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.9; c.stroke();
+  // glyphs on the rim
+  c.strokeStyle = 'rgba(160,255,230,0.75)'; c.lineWidth = 0.9;
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * 6.28 + 0.52;
+    const gx = 32 + Math.cos(a) * 29, gy = 46 + Math.sin(a) * 16;
+    c.beginPath(); c.moveTo(gx - 2, gy - 1); c.lineTo(gx, gy + 1.5); c.lineTo(gx + 2, gy - 1); c.moveTo(gx, gy - 2); c.lineTo(gx, gy + 1.5); c.stroke();
+  }
+  // three violet pylons
+  for (const [px, py] of [[10, 40], [54, 40], [32, 30]] as [number, number][]) {
+    c.beginPath(); c.moveTo(px - 4, py + 6); c.lineTo(px - 2.4, py - 20); c.lineTo(px, py - 25); c.lineTo(px + 2.4, py - 20); c.lineTo(px + 4, py + 6); c.closePath();
+    c.fillStyle = SCI.violet; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+    c.fillStyle = 'rgba(255,255,255,0.18)'; c.beginPath(); c.moveTo(px - 2.6, py + 4); c.lineTo(px - 1.6, py - 19); c.lineTo(px - 0.4, py - 19); c.lineTo(px - 1, py + 4); c.closePath(); c.fill();
+    c.fillStyle = JADE; c.fillRect(px - 2.4, py - 8, 4.8, 2.4);
+  }
+  // emitter socket
+  ellipse(c, 32, 44, 12, 6); c.fillStyle = '#120d1e'; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+  ellipse(c, 32, 44, 9, 4.4); c.strokeStyle = SCI.cyan; c.lineWidth = 1; c.stroke();
+});
+
+function drawVortexEmitter(c: C, m: Machine, x: number, y: number, time: number) {
+  blit(c, vortexBase(), x, y);
+  const cx = x + 32, cy = y + 4;
+  // floating ring
+  const fl = Math.sin(time * 2) * 2.5;
+  c.save(); c.translate(cx, cy + fl); c.rotate(Math.sin(time * 0.8) * 0.25);
+  ellipse(c, 0, 0, 15, 5.5); c.strokeStyle = INK; c.lineWidth = 4.4; c.stroke();
+  ellipse(c, 0, 0, 15, 5.5); c.strokeStyle = SCI.gold; c.lineWidth = 2.6; c.stroke();
+  for (let i = 0; i < 6; i++) { const a = time * 2 + i * 1.05; c.fillStyle = SCI.cyan; c.beginPath(); c.arc(Math.cos(a) * 15, Math.sin(a) * 5.5, 0.9, 0, 6.28); c.fill(); }
+  c.restore();
+  // core: big when idle (the whirl collapses home), small when the whirl is out
+  const idle = m.status !== 'working' || !m.bots.length;
+  const r = idle ? 6 + Math.sin(time * 4) * 0.8 : 3.4;
+  glow(c, cx, cy + fl, r * 3, idle ? SCI.cyan : '#c084fc', 0.45);
+  c.beginPath(); c.arc(cx, cy + fl, r, 0, 6.28);
+  c.fillStyle = rad(c, cx - r * 0.3, cy + fl - r * 0.3, 0, r, [[0, '#ffffff'], [0.45, SCI.cyan], [1, '#7c3aed']]); c.fill();
+  c.strokeStyle = INK; c.lineWidth = 0.9; c.stroke();
+  // pylon tips spark toward the core
+  for (const [px, py] of [[10, 15], [54, 15], [32, 5]] as [number, number][]) lamp(c, x + px, y + py, SCI.cyan, Math.sin(time * 6 + px) > -0.2, 1);
+  lamp(c, x + 60, y + 40, statusColor(m), true, 1.1);
+}
+
+function drawVortex(c: C, m: Machine, b: Bot, time: number, fx: Effects, onScreen: boolean) {
+  const ex = (m.tx + 1) * TILE, ey = (m.ty + 0.1) * TILE;
+  const x = b.x * TILE, y = b.y * TILE;
+  const working = m.status === 'working';
+  if (!working) return; // idle: the emitter shows the collapsed orb
+  // energy tether from the emitter
+  c.save(); c.globalCompositeOperation = 'lighter';
+  const wob = (t: number) => Math.sin(time * 9 + t * 12) * 3;
+  c.strokeStyle = 'rgba(192,132,252,0.55)'; c.lineWidth = 3.2;
+  c.beginPath();
+  for (let i = 0; i <= 14; i++) { const t = i / 14; const px = ex + (x - ex) * t, py = ey + (y - 18 - ey) * t - Math.sin(t * Math.PI) * 16; i ? c.lineTo(px + wob(t), py) : c.moveTo(px, py); }
+  c.stroke();
+  c.strokeStyle = 'rgba(200,250,255,0.8)'; c.lineWidth = 1;
+  c.stroke();
+  c.restore();
+  groundShadow(c, x, y + 4, 20, 8, 0.35);
+  // ground swirl
+  c.save(); c.translate(x, y + 2); c.scale(1, 0.45);
+  c.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 3; i++) {
+    c.strokeStyle = `rgba(95,242,255,${0.35 - i * 0.08})`; c.lineWidth = 2.5;
+    c.beginPath(); c.arc(0, 0, 10 + i * 6, time * 4 + i, time * 4 + i + 3.6); c.stroke();
+  }
+  c.restore();
+  // the funnel: stacked rotating ellipses, wide at the top
+  c.save();
+  c.globalCompositeOperation = 'lighter';
+  const H = 40;
+  for (let i = 0; i < 9; i++) {
+    const t = i / 8;
+    const yy = y - t * H;
+    const rx = 4 + t * t * 16;
+    const sway = Math.sin(time * 3 + t * 4) * (2 + t * 4);
+    const a0 = time * (7 - t * 3) + i;
+    c.strokeStyle = i % 2 ? `rgba(192,132,252,${0.75 - t * 0.3})` : `rgba(95,242,255,${0.8 - t * 0.3})`;
+    c.lineWidth = 2.2 - t * 0.8;
+    c.beginPath(); c.ellipse(x + sway, yy, rx, rx * 0.32, 0, a0, a0 + 4.4); c.stroke();
+  }
+  glow(c, x, y - 6, 16, '#a78bfa', 0.35);
+  c.restore();
+  // debris orbiting and being sucked up: material icons spiralling
+  for (let i = 0; i < 4; i++) {
+    const k = ((time * 0.6 + i / 4 + m.id * 0.1) % 1);
+    const a = time * 5 + i * 1.6;
+    const rr = 6 + k * 14;
+    const ix = x + Math.cos(a) * rr + Math.sin(time * 3 + k * 4) * (2 + k * 4);
+    const iy = y - k * H + Math.sin(a) * rr * 0.3;
+    drawMatIcon(c, (i + m.id) % 5, ix, iy, 6 + (1 - k) * 2);
+  }
+  // bright eye of the storm
+  c.beginPath(); c.arc(x, y - H - 2, 3, 0, 6.28); c.fillStyle = '#fff'; c.fill();
+  glow(c, x, y - H - 2, 9, SCI.cyan, 0.5);
+  if (onScreen && Math.random() < 0.6) fx.suck(x + (Math.random() - 0.5) * 40, y + (Math.random() - 0.5) * 22, x, y - 10, Math.floor(Math.random() * 5), 0.4);
+}

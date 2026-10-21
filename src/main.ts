@@ -326,6 +326,13 @@ export class App implements PointerSink {
     return !touch;
   }
 
+  private peekAt: { x: number; y: number; until: number } | null = null;
+  /** Briefly swing the camera to a point (alerts, events). */
+  peek(x: number, y: number) {
+    this.peekAt = { x, y, until: performance.now() + 2600 };
+    this.ui.closeModal();
+  }
+
   quickTap(sx: number, sy: number) {
     if (this.ui.popupOpen || this.ui.modalTab || this.build) return;
     const t = this.renderer.tileAtScreen(sx, sy);
@@ -503,11 +510,14 @@ export class App implements PointerSink {
         this.renderer.focus = b.cam;
       } else this.renderer.focus = null;
       void s;
+    } else if (this.peekAt && performance.now() < this.peekAt.until) {
+      this.renderer.focus = this.peekAt;
     } else this.renderer.focus = null;
     this.fx.update(dt);
     this.renderer.chunks.rendersThisFrame = 0;
     try { this.renderer.draw(this.time, dt, this.build); } catch (e) { this.reportError(e); }
     if (this.build) this.ui.positionBuildOverlay();
+    this.ui.updatePointers();
     try { this.ui.update(dt); } catch (e) { this.reportError(e); }
     this.saveT += dt;
     if (this.saveT > 15 && this.started) { this.saveT = 0; this.save(); }
