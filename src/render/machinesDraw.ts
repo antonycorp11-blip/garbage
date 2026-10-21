@@ -618,6 +618,12 @@ const recyclerBase = () => cachedLayer('refinery3', -14, -66, 126, 174, (c) => {
   c.fillStyle = SCI.orange; c.fillRect(19, 44, 60, 4);
   rrect(c, 19, 44, 60, 4, 1); c.strokeStyle = INK; c.lineWidth = 0.8; c.stroke();
   rrect(c, 38, 52, 22, 10, 3); c.fillStyle = '#17132a'; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+  // cargo crates in material colors on the apron
+  for (const [bx, by, col] of [[0, 62, '#f472b6'], [8, 66, '#93c5fd'], [86, 62, '#86efac'], [92, 70, '#fb923c']] as [number, number, string][]) {
+    box34(c, bx, by, 9, 3, 7, col, 1.4);
+    c.fillStyle = 'rgba(255,255,255,0.5)'; c.fillRect(bx + 1.5, by + 5, 6, 0.8);
+  }
+  c.save(); rrect(c, -6, 27, 108, 66, 10); c.clip(); hazardStripes(c, -6, 82, 108, 3.4, SCI.orange, SCI.violetD); c.restore();
   rrect(c, 26, 70, 46, 9, 3); c.fillStyle = SCI.teal; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.9; c.stroke();
   stencil(c, 'REFINARIA', 49, 74.8, 5, 'rgba(0,40,36,0.9)');
   // dome interior (glass and core drawn live)
