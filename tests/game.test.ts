@@ -343,4 +343,27 @@ describe('Game', () => {
     expect(g2.money).toBeGreaterThanOrEqual(0);
     void m2;
   });
+
+  it('new extractors: harvester, drill and vortex pull their weight', () => {
+    const mk = () => {
+      const g = new Game();
+      g.money = 1e9; g.storage = [1e6, 1e6, 1e6, 1e6, 1e6, 100];
+      g.contracts.started = true;
+      g.upgrades = { a_belts: 1, a_arm: 1, a_robots: 1, a_harvest: 1, a_crusher: 1, a_robotcount: 1, a_drill: 1, a_excav: 1, a_radius: 2, a_vortex: 1 };
+      g.autoSell = [false, false, false, false, false, false];
+      g.recompute();
+      return g;
+    };
+    for (const type of ['harvester', 'drill', 'vortex'] as const) {
+      const g = mk();
+      const tx = CENTER + 3, ty = CENTER + 4;
+      clearArea(g, tx - 1, ty - 1, tx + 3, ty + 3);
+      expect(g.build(type, tx, ty)).toBeNull();
+      const m = g.machines.machines.find((q) => q.type === type)!;
+      const st0 = sumMats(g.storage) + sumMats(g.yard);
+      for (let i = 0; i < 400; i++) g.update(0.25, idle);
+      expect(m.collected).toBeGreaterThan(300);
+      expect(sumMats(g.storage) + sumMats(g.yard) + m.bufferTotal).toBeGreaterThan(st0 + 200);
+    }
+  });
 });

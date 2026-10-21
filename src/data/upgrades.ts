@@ -47,6 +47,9 @@ export const UPGRADES: UpgradeDef[] = [
   { id: 'a_robotcount', branch: 'automacao', name: 'Mais Robôs', icon: '👾', desc: 'Os robôs se reproduzem. Não pergunte como.', effect: '+1 drone por hangar', max: 5, base: 9000, growth: 2.4, req: [['a_robots', 1]], col: 1, row: 3 },
   { id: 'a_crusher', branch: 'automacao', name: 'Trituração', icon: '🔩', desc: 'Prensas industriais encontradas, ironicamente, na sucata.', effect: 'Desbloqueia a Prensa Compactadora (processa o pátio do posto)', max: 1, base: 1500, growth: 1, req: [['a_arm', 1]], col: 2, row: 1 },
   { id: 'a_excav', branch: 'automacao', name: 'Maquinário Pesado', icon: '🚜', desc: 'Uma escavadeira autônoma. O sindicato dos catadores está preocupado.', effect: 'Desbloqueia a Mineradora Rotativa', max: 1, base: 90000, growth: 1, req: [['a_robots', 1], ['a_radius', 2]], col: 1, row: 4 },
+  { id: 'a_harvest', branch: 'automacao', name: 'Rovers Agrícolas', icon: '🚜', desc: 'Um trator que nunca dorme e nunca reclama do sol.', effect: 'Desbloqueia a Colheitadeira Autônoma', max: 1, base: 15000, growth: 1, req: [['a_robots', 1]], col: 0, row: 3 },
+  { id: 'a_drill', branch: 'automacao', name: 'Sismologia Aplicada', icon: '🌋', desc: 'Se o chão tremer, é você trabalhando.', effect: 'Desbloqueia a Perfuratriz Sísmica', max: 1, base: 60000, growth: 1, req: [['a_crusher', 1], ['a_robotcount', 1]], col: 2, row: 3 },
+  { id: 'a_vortex', branch: 'automacao', name: 'Física Proibida', icon: '🌀', desc: 'Um manual dos antigos, escrito em glub.', effect: 'Desbloqueia o Vórtice Coletor', max: 1, base: 900000, growth: 1, req: [['a_excav', 1], ['a_harvest', 1]], col: 0, row: 5 },
   { id: 'a_integr', branch: 'automacao', name: 'Integração Total', icon: '🔗', desc: 'Todas as máquinas num grupo de WhatsApp. A produtividade subiu.', effect: '+20% velocidade de máquinas e robôs', max: 4, base: 200000, growth: 2.5, req: [['a_excav', 1]], col: 1, row: 5 },
 
   // ---- RECICLAGEM ----

@@ -1,4 +1,4 @@
-export type MachineType = 'collector' | 'arm' | 'conveyor' | 'separator' | 'crusher' | 'robots' | 'excavator' | 'recycler' | 'ancient' | 'depot' | 'beacon';
+export type MachineType = 'collector' | 'arm' | 'conveyor' | 'separator' | 'crusher' | 'robots' | 'excavator' | 'recycler' | 'ancient' | 'depot' | 'beacon' | 'harvester' | 'drill' | 'vortex';
 
 export type MachineRole = 'coleta' | 'logistica' | 'processamento' | 'deposito';
 
@@ -82,6 +82,24 @@ export const MACHINES: Record<MachineType, MachineDef> = {
     func: 'Um segundo posto gigante: +300/s de vazão, recebe esteiras e dá +15% de valor.',
     desc: 'Para o fluxo massivo do fim do jogo. Também acelera as máquinas em 10% (até 3 refinarias).',
   },
+  harvester: {
+    ...D, type: 'harvester', name: 'Colheitadeira Autônoma', short: 'Colheitadeira', role: 'coleta', size: 2, money: 18000, mats: [0, 400, 100, 0, 120, 0], costGrowth: 1.35,
+    rate: 22, radius: 20, buffer: 0, unlock: 'a_harvest', solid: true, buildable: true,
+    func: 'Uma garagem com um rover que varre a sucata leve numa área enorme e leva direto ao posto. Sem esteiras.',
+    desc: 'O rover vai nas pilhas mais cheias, enche a caçamba de 300 e volta sozinho. No nível 3 e 5 a garagem ganha mais um rover.',
+  },
+  drill: {
+    ...D, type: 'drill', name: 'Perfuratriz Sísmica', short: 'Perfuratriz', role: 'coleta', size: 3, money: 120000, mats: [0, 1500, 0, 500, 400, 0], costGrowth: 1.45,
+    rate: 90, radius: 7, buffer: 4000, heavy: true, unlock: 'a_drill', solid: true, buildable: true,
+    func: 'Arranca tudo, até a sucata pesada, num raio de 7 m e muito rápido (90/s). Precisa entregar por esteira, Teleportador ou círculo do posto.',
+    desc: 'Cada pulso sísmico solta a sucata do chão. Coloque no meio das montanhas mais densas e ligue a uma linha com separador.',
+  },
+  vortex: {
+    ...D, type: 'vortex', name: 'Vórtice Coletor', short: 'Vórtice', role: 'coleta', size: 2, money: 1200000, mats: [3000, 3000, 2000, 2000, 2000, 10], costGrowth: 1.6,
+    rate: 160, radius: 28, buffer: 0, heavy: true, unlock: 'a_vortex', solid: true, buildable: true,
+    func: 'Um redemoinho de plasma passeia pela área devorando tudo e teletransporta direto para os silos.',
+    desc: 'Tecnologia dos antigos donos do planeta. Os Glubs se escondem quando ele passa.',
+  },
   beacon: {
     ...D, type: 'beacon', name: 'Teleportador de Carga', short: 'Teleportador', role: 'deposito', size: 2, money: 2500, mats: [0, 120, 0, 0, 40, 0], costGrowth: 1.6,
     rate: 0, radius: 5, buffer: 0, unlock: 'a_belts', solid: true, buildable: true,
@@ -102,7 +120,7 @@ export const MACHINES: Record<MachineType, MachineDef> = {
   },
 };
 
-export const BUILD_ORDER: MachineType[] = ['collector', 'arm', 'robots', 'excavator', 'conveyor', 'separator', 'crusher', 'beacon', 'recycler'];
+export const BUILD_ORDER: MachineType[] = ['collector', 'arm', 'robots', 'harvester', 'excavator', 'drill', 'vortex', 'conveyor', 'separator', 'crusher', 'beacon', 'recycler'];
 export const ROLE_NAMES: Record<MachineRole, string> = {
   coleta: 'Coleta — tiram a sucata do terreno',
   logistica: 'Logística — levam o material até o posto',

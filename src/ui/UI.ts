@@ -367,7 +367,7 @@ export class UI {
     else status = 'Trabalhando';
     let delivery = '';
     if (!isHub(m.type) && !isBelt(m.type) && m.type !== 'ancient') {
-      delivery = m.type === 'robots' ? 'Drones levam direto ao posto ✓' : m.inService ? 'Área de serviço do posto ✓' : m.outConveyor >= 0 ? (m.linked ? 'Esteira conectada ✓' : 'Esteira não chega ao posto ✗') : 'Sem entrega automática ✗';
+      delivery = m.type === 'robots' ? 'Drones levam direto ao posto ✓' : m.type === 'harvester' ? 'O rover leva direto ao posto ✓' : m.type === 'vortex' ? 'Teletransporta direto para os silos ✓' : m.inService ? 'Área de serviço do posto ✓' : m.outConveyor >= 0 ? (m.linked ? 'Esteira conectada ✓' : 'Esteira não chega ao posto ✗') : 'Sem entrega automática ✗';
     }
     const canUp = MACHINES[m.type].buildable && m.type !== 'conveyor' && m.level < MAX_MACHINE_LEVEL;
     const upCost = Math.ceil(machineUpgradeCost(m.type, m.level) * d.costMult);
@@ -382,8 +382,9 @@ export class UI {
     }
     if (m.type === 'crusher') kv.push(`<span>Processa</span><span>+${fmtShort(def.process * (1 + 0.5 * (m.level - 1)))}/s</span>`);
     if (def.rate > 0) kv.push(`<span>Ergue pesado</span><span>${def.heavy ? 'Sim ✓' : 'Não'}</span>`);
-    if (def.rate > 0) kv.push(`<span>Velocidade</span><span>${fmtShort(machineRate(m, d) * (m.type === 'robots' ? botCount(m, d) : 1))}/s</span>`);
+    if (def.rate > 0) kv.push(`<span>Velocidade</span><span>${fmtShort(machineRate(m, d) * (m.type === 'robots' || m.type === 'harvester' ? botCount(m, d) : 1))}/s</span>`);
     if (def.radius > 0 && !isHub(m.type)) kv.push(`<span>Alcance</span><span>${machineRadius(m, d).toFixed(1)} m</span>`);
+    if (m.type === 'harvester') kv.push(`<span>Rovers</span><span>${botCount(m, d)} (mais 1 no nível 3 e no 5)</span>`);
     if (m.type === 'robots') kv.push(`<span>Drones</span><span>${botCount(m, d)}${m.extra ? ` (${m.extra} comprados)` : ''}</span>`);
     if (m.type === 'collector') kv.push(`<span>Zona</span><span>${g.roamRadius(m).toFixed(0)} m ao redor de onde foi construído</span>`);
     if (def.buffer > 0 && m.type !== 'robots') kv.push(`<span>Caçamba</span><span>${fmtInt(m.bufferTotal)} / ${fmtInt(machineBufferCap(m, d))}</span>`);

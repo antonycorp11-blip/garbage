@@ -69,13 +69,15 @@ const BOT_CAPACITY = 24;
 const BOT_SPEED = 2.6;
 const EXC_SPEED = 2.1;
 const EXC_CAPACITY = 1500;
+const HARV_CAPACITY = 300;
+const HARV_SPEED = 3.4;
 
 export function machineRate(m: Machine, d: Derived): number {
   return MACHINES[m.type].rate * (1 + 0.5 * (m.level - 1)) * d.machineSpeed;
 }
 export function machineRadius(m: Machine, d: Derived): number {
   const def = MACHINES[m.type];
-  return (def.radius + (m.level - 1) * (m.type === 'robots' || m.type === 'excavator' ? 1.5 : 0.35)) * d.machineRadiusMult;
+  return (def.radius + (m.level - 1) * (m.type === 'robots' || m.type === 'excavator' || m.type === 'harvester' || m.type === 'vortex' ? 1.5 : 0.35)) * d.machineRadiusMult;
 }
 export function machineBufferCap(m: Machine, d: Derived): number {
   return Math.round(MACHINES[m.type].buffer * (1 + 0.3 * (m.level - 1)) * d.bufferMult);
@@ -83,12 +85,14 @@ export function machineBufferCap(m: Machine, d: Derived): number {
 /** drones a hangar can buy on top of its own */
 export const MAX_EXTRA_DRONES = 4;
 export function botCount(m: Machine, d: Derived): number {
-  if (m.type === 'excavator') return 1;
+  if (m.type === 'excavator' || m.type === 'vortex') return 1;
+  if (m.type === 'harvester') return 1 + (m.level >= 3 ? 1 : 0) + (m.level >= 5 ? 1 : 0);
   if (m.type !== 'robots') return 0;
   return 2 + (m.level - 1) + d.extraRobots + m.extra;
 }
 export function botCapacity(m: Machine, d: Derived): number {
-  return Math.round((m.type === 'excavator' ? EXC_CAPACITY : BOT_CAPACITY) * (1 + 0.3 * (m.level - 1)) * d.bufferMult);
+  const base = m.type === 'excavator' ? EXC_CAPACITY : m.type === 'harvester' ? HARV_CAPACITY : BOT_CAPACITY;
+  return Math.round(base * (1 + 0.3 * (m.level - 1)) * d.bufferMult);
 }
 export function hubRadius(m: Machine, d: Derived): number {
   return MACHINES[m.type].radius + d.serviceBonus;
@@ -288,9 +292,10 @@ export class MachineSystem {
         if (l <= step) { m.ox = 0; m.oy = 0; } else { m.ox -= (m.ox / l) * step; m.oy -= (m.oy / l) * step; }
       }
       switch (m.type) {
-        case 'collector': case 'arm': case 'ancient': this.updateStatic(m, dt, d); m.idleT = m.status === 'idle' ? m.idleT + dt : 0; break;
+        case 'vortex': this.updateVortex(m, dt, d); break;
+        case 'collector': case 'arm': case 'ancient': case 'drill': this.updateStatic(m, dt, d); m.idleT = m.status === 'idle' ? m.idleT + dt : 0; break;
         case 'crusher': m.status = this.host.yardBusy() ? 'working' : 'idle'; break;
-        case 'robots': case 'excavator': this.updateBots(m, dt, d); break;
+        case 'robots': case 'excavator': case 'harvester': this.updateBots(m, dt, d); break;
         case 'conveyor': case 'separator': this.updateBelt(m, dt, d); break;
         default: break;
       }
@@ -328,7 +333,7 @@ export class MachineSystem {
     while (m.bots.length > want) { const b = m.bots.pop()!; if (b.target >= 0) this.reserved.delete(b.target); }
     const cap = botCapacity(m, d);
     const rate = machineRate(m, d);
-    const speed = (m.type === 'excavator' ? EXC_SPEED : BOT_SPEED) * Math.sqrt(d.machineSpeed);
+    const speed = (m.type === 'excavator' ? EXC_SPEED : m.type === 'harvester' ? HARV_SPEED : BOT_SPEED) * Math.sqrt(d.machineSpeed);
     const bufCap = machineBufferCap(m, d);
     const w = this.host.world;
     let anyWork = false;
@@ -354,7 +359,7 @@ export class MachineSystem {
         if (n > 0) {
           b.work -= n;
           n = Math.min(n, cap - b.carryTotal);
-          const tiles = m.type === 'excavator' ? this.scoopTiles(b.target) : [b.target];
+          const tiles = m.type === 'excavator' || m.type === 'harvester' ? this.scoopTiles(b.target) : [b.target];
           let got = 0;
           for (const tile of tiles) {
             if (got >= n) break;
@@ -378,7 +383,7 @@ export class MachineSystem {
           if (nt >= 0) { b.target = nt; this.reserved.add(nt); b.state = BOT_GO; }
           else b.state = b.carryTotal > 0 ? BOT_RETURN : BOT_IDLE;
         }
-      } else if (b.state === BOT_RETURN && m.type === 'robots') {
+      } else if (b.state === BOT_RETURN && (m.type === 'robots' || m.type === 'harvester')) {
         // drones fly their load straight to the nearest hub: no belts needed
         const hub = this.nearestHub(b.x, b.y);
         if (!hub) { anyWork = true; continue; }
@@ -412,8 +417,53 @@ export class MachineSystem {
         } else anyWork = true;
       }
     }
-    if (m.type === 'robots') { if (m.status !== 'full' || this.host.yardSpace() > 0) m.status = anyWork ? 'working' : 'idle'; }
+    if (m.type === 'robots' || m.type === 'harvester') { if (m.status !== 'full' || this.host.yardSpace() > 0) m.status = anyWork ? 'working' : 'idle'; }
     else m.status = m.bufferTotal >= bufCap ? 'full' : anyWork ? 'working' : 'idle';
+  }
+
+  /** The vortex: one roaming whirl that eats everything under it and teleports it to the yard. */
+  private updateVortex(m: Machine, dt: number, d: Derived) {
+    const sx = centerX(m), sy = centerY(m);
+    if (!m.bots.length) m.bots.push({ x: sx, y: sy - 1, state: BOT_IDLE, target: -1, carry: emptyMats(), carryTotal: 0, work: 0, angle: 0, anim: 0 });
+    const b = m.bots[0];
+    b.anim += dt;
+    const w = this.host.world;
+    if (b.state === BOT_IDLE || b.target < 0 || w.garbage[b.target] === 0) {
+      this.release(b);
+      const t = this.pickBotTarget(m);
+      if (t < 0) { m.status = 'idle'; b.state = BOT_IDLE; b.x += (sx - b.x) * Math.min(1, dt); b.y += (sy - 1 - b.y) * Math.min(1, dt); return; }
+      b.target = t; this.reserved.add(t); b.state = BOT_GO;
+    }
+    m.status = 'working';
+    const tx = (b.target % WORLD_TILES) + 0.5, ty = ((b.target / WORLD_TILES) | 0) + 0.5;
+    // it keeps eating while it drifts
+    this.moveBot(b, tx, ty, 1.6 * dt);
+    b.work += machineRate(m, d) * dt;
+    let n = Math.floor(b.work);
+    if (n <= 0) return;
+    b.work -= n;
+    const out = emptyMats();
+    const cx = Math.floor(b.x), cy = Math.floor(b.y);
+    let got = 0;
+    for (let r = 0; r <= 2 && got < n; r++) for (let yy = -r; yy <= r && got < n; yy++) for (let xx = -r; xx <= r && got < n; xx++) {
+      if (Math.max(Math.abs(xx), Math.abs(yy)) !== r) continue;
+      const ttx = cx + xx, tty = cy + yy;
+      if (!inWorld(ttx, tty) || Math.hypot(ttx + 0.5 - sx, tty + 0.5 - sy) > machineRadius(m, d)) continue;
+      const tile = tileIndex(ttx, tty);
+      const before = w.garbage[tile];
+      if (!before) continue;
+      const rr = w.remove(tile, n - got, 'machine');
+      if (rr > 0) {
+        w.rollMaterials(tile, rr, d.rareChance, out);
+        got += rr;
+        if (this.host.isVisible((ttx + 0.5) * TILE, (tty + 0.5) * TILE)) this.host.fx.removed(tile, before, before - rr, b.x * TILE, b.y * TILE);
+      }
+    }
+    if (got > 0) {
+      m.collected += got;
+      this.removedAcc += got;
+      this.host.deliver(out, 0, b.x * TILE, b.y * TILE, true);
+    }
   }
 
   private scoopTiles(center: number): number[] {
@@ -452,8 +502,8 @@ export class MachineSystem {
     }
     if (!cands.length) return -1;
     const w = this.host.world;
-    if (m.type === 'excavator') {
-      // the excavator goes for the biggest piles
+    if (m.type === 'excavator' || m.type === 'harvester') {
+      // big vehicles go for the biggest piles
       cands.sort((a, b) => w.garbage[b] - w.garbage[a]);
       return cands[Math.floor(Math.random() * Math.min(3, cands.length))];
     }
@@ -530,7 +580,7 @@ export class MachineSystem {
       if (last && last.t < SPACING) return;
       let mat = 0;
       for (let k = 1; k < MAT_COUNT; k++) if (m.buffer[k] > m.buffer[mat]) mat = k;
-      const units = Math.min(m.buffer[mat], PACKET_UNITS * (m.type === 'excavator' || m.type === 'crusher' ? 3 : 1));
+      const units = Math.min(m.buffer[mat], PACKET_UNITS * (m.type === 'drill' ? 5 : m.type === 'excavator' || m.type === 'crusher' ? 3 : 1));
       if (units <= 0) return;
       m.buffer[mat] -= units;
       m.bufferTotal -= units;
