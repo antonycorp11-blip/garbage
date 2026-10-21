@@ -464,34 +464,63 @@ export class Game {
    * reach, close to the point and (preferably) inside a depot service area.
    */
   findSpot(type: MachineType, fromX: number, fromY: number): { tx: number; ty: number } | null {
+    const s = this.findSpots(type, fromX, fromY, 1)[0];
+    return s ? { tx: s.tx, ty: s.ty } : null;
+  }
+
+  /** Garbage a machine placed at (tx, ty) would have within reach. */
+  reachGarbage(type: MachineType, tx: number, ty: number, step = 1): number {
+    const def = MACHINES[type];
+    const reach = def.radius > 0 && !isHub(type) ? def.radius * this.d.machineRadiusMult : 0;
+    if (reach <= 0) return 0;
+    const w = this.world;
+    const cx = tx + def.size / 2, cy = ty + def.size / 2, rr = Math.ceil(reach);
+    let g = 0;
+    for (let yy = -rr; yy <= rr; yy += step) for (let xx = -rr; xx <= rr; xx += step) {
+      if (xx * xx + yy * yy > reach * reach) continue;
+      const x = Math.floor(cx + xx), y = Math.floor(cy + yy);
+      if (inWorld(x, y)) g += def.heavy ? w.garbage[tileIndex(x, y)] : w.lightAvailable(tileIndex(x, y));
+    }
+    return g * step * step;
+  }
+
+  inServiceArea(type: MachineType, tx: number, ty: number): boolean {
+    const s = MACHINES[type].size;
+    return this.machines.hubs().some((h) => Math.hypot(centerX(h) - tx - s / 2, centerY(h) - ty - s / 2) <= hubRadius(h, this.d));
+  }
+
+  /** Best valid places for a machine near a point, spread apart, best first. */
+  findSpots(type: MachineType, fromX: number, fromY: number, n: number): { tx: number; ty: number; garbage: number; service: boolean }[] {
     const def = MACHINES[type];
     const s = def.size;
     const R = 16;
-    const hubs = this.machines.hubs();
     const reach = def.radius > 0 && !isHub(type) ? def.radius * this.d.machineRadiusMult : 0;
     const step = reach > 8 ? 2 : 1;
-    const w = this.world;
-    let best: { tx: number; ty: number } | null = null, bs = Infinity;
+    const cands: { tx: number; ty: number; garbage: number; service: boolean; score: number }[] = [];
     for (let y = Math.floor(fromY) - R; y <= Math.floor(fromY) + R; y++) for (let x = Math.floor(fromX) - R; x <= Math.floor(fromX) + R; x++) {
       const d = Math.hypot(x + s / 2 - fromX, y + s / 2 - fromY);
       if (d > R) continue;
       if (this.placeProblem(type, x, y)) continue;
       let score = d * 0.45;
+      let g = 0;
       if (reach > 0) {
-        let g = 0;
-        const cx = x + s / 2, cy = y + s / 2, rr = Math.ceil(reach);
-        for (let yy = -rr; yy <= rr; yy += step) for (let xx = -rr; xx <= rr; xx += step) {
-          if (xx * xx + yy * yy > reach * reach) continue;
-          const tx = Math.floor(cx + xx), ty = Math.floor(cy + yy);
-          if (inWorld(tx, ty)) g += w.garbage[tileIndex(tx, ty)];
-        }
+        g = this.reachGarbage(type, x, y, step);
         if (g === 0) continue;
-        score -= Math.log(1 + g * step * step) * 2.2;
+        score -= Math.log(1 + g) * 2.2;
       }
-      if (type !== 'conveyor' && type !== 'separator' && type !== 'recycler' && !hubs.some((h) => Math.hypot(centerX(h) - x - s / 2, centerY(h) - y - s / 2) <= hubRadius(h, this.d))) score += 3.5;
-      if (score < bs) { bs = score; best = { tx: x, ty: y }; }
+      const service = this.inServiceArea(type, x, y);
+      if (type !== 'conveyor' && type !== 'separator' && type !== 'recycler' && !service) score += 3.5;
+      cands.push({ tx: x, ty: y, garbage: g, service, score });
     }
-    return best;
+    cands.sort((a, b) => a.score - b.score);
+    const out: { tx: number; ty: number; garbage: number; service: boolean }[] = [];
+    const gap = Math.max(3, reach * 1.2, s + 1);
+    for (const c of cands) {
+      if (out.length >= n) break;
+      if (out.some((o) => Math.hypot(o.tx - c.tx, o.ty - c.ty) < gap)) continue;
+      out.push({ tx: c.tx, ty: c.ty, garbage: c.garbage, service: c.service });
+    }
+    return out;
   }
 
   /** Picks a machine up to move it elsewhere (its load goes to the depot). */

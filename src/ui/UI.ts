@@ -1,7 +1,7 @@
 import { TILE, TOTAL_GARBAGE, WORLD_TILES } from '../core/constants';
 import { fmtInt, fmtMoney, fmtPct, fmtShort, fmtTime } from '../core/format';
 import { DISCOVERIES } from '../data/discoveries';
-import { BUILD_ORDER, MACHINES, MAX_MACHINE_LEVEL, MachineRole, MachineType, ROLE_NAMES, machineUpgradeCost } from '../data/machines';
+import { BUILD_ORDER, MACHINES, MAX_MACHINE_LEVEL, MachineRole, MachineType, machineUpgradeCost } from '../data/machines';
 import { MATERIALS, MAT_COUNT } from '../data/materials';
 import { ENDING, SENDER } from '../data/messages';
 import { G_ASPHALT, G_CONCRETE, G_EARTH, G_GRAVEL, G_RUINFLOOR } from '../data/regions';
@@ -65,7 +65,7 @@ export class UI {
     const left = h(`<div class="hud-left">
       <div class="chip money pe">${ICONS.coin.replace('<svg', '<svg class="ico"')}<span class="mv">$0</span><span class="rate"></span></div>
       <div class="chip bag pe"><div class="row"><span>${ICONS.bag.replace('<svg', '<svg style="width:16px;height:16px;vertical-align:-3px"')} Mochila</span><span class="bv">0/20</span></div><div class="bar"><i></i></div></div>
-      <div class="chip toolchip pe"><span class="tn">Mãos Nuas</span><small class="tl">1/7</small></div>
+      <div class="chip toolchip pe"><span class="tn">Pinças de Fábrica</span><small class="tl">1/7</small></div>
       <div class="chip yard pe" style="display:none" title="Pátio do depósito: o que as máquinas entregam espera aqui para ser processado"><div class="row"><span>⚙ Pátio</span><span class="yv">0/250</span></div><div class="bar"><i></i></div></div>
     </div>`);
     r.appendChild(left);
@@ -222,31 +222,63 @@ export class UI {
   }
 
   // ------------------------------------------------------------------ build bar
+  private spotLayer: HTMLElement | null = null;
+  private ghostChip: HTMLElement | null = null;
+
   showBuildBar() {
     const b = this.app.build;
     const bar = this.el.buildbar;
     document.body.classList.toggle('building', !!b);
+    this.spotLayer?.remove(); this.spotLayer = null; this.ghostChip = null;
     if (!b) { bar.style.display = 'none'; return; }
     const def = MACHINES[b.type];
     const cost = this.game.machineCost(b.type);
     const belt = isBelt(b.type);
+    const touch = document.body.classList.contains('touch');
     bar.style.display = 'flex';
-    bar.innerHTML = `<div class="bb-h"><span class="name">${b.moving ? 'Movendo: ' : ''}${def.name}</span><span class="cost">${b.moving ? '<span class="cost">grátis</span>' : this.costHtml(cost)}</span></div>
-      <div class="bb-msg"></div>
-      <div class="bb-pad mobile-only">
-        <button class="pad" data-n="-1,0" aria-label="Esquerda">◀</button><button class="pad" data-n="0,-1" aria-label="Cima">▲</button><button class="pad" data-n="0,1" aria-label="Baixo">▼</button><button class="pad" data-n="1,0" aria-label="Direita">▶</button>
-        ${belt ? `<button class="pad rot" data-a="rot" aria-label="Girar">↻</button>` : ''}
-      </div>
+    bar.innerHTML = `<div class="bb-h"><img class="bb-ic" src="${this.machineThumb(b.type)}" alt=""/><div class="bb-t"><div class="name">${b.moving ? 'Movendo ' : ''}${def.short}${b.moving ? '' : ` <span class="bb-cost">${this.costHtml(cost)}</span>`}</div><div class="bb-msg"></div></div></div>
+      <div class="bb-help">${belt ? (touch ? 'Arraste <b>a partir da esteira</b> para desenhar a linha · arraste o mapa para olhar' : 'Clique e arraste para desenhar a linha · R gira') : touch ? 'Arraste <b>a máquina</b> ou o mapa · ⭐ = bons lugares' : 'Clique para construir · os ⭐ são os melhores lugares'}</div>
       <div class="bb-a">
-        ${belt ? `<button class="btn ghost desk-only" data-a="rot">↻ Girar <span class="key">R</span></button>` : ''}
-        <button class="btn ghost" data-a="cancel">✕ Sair <span class="key desk-only">Esc</span></button>
-        <button class="btn green mobile-only" data-a="ok">${belt ? '✓ Colocar esteira' : b.moving ? '✓ Colocar aqui' : '✓ Construir aqui'}</button>
+        <button class="btn ghost" data-a="cancel">✕${touch ? '' : ' Sair <span class="key">Esc</span>'}</button>
+        ${belt ? `<button class="btn ghost" data-a="rot">↻ Girar${touch ? '' : ' <span class="key">R</span>'}</button>` : ''}
+        ${touch ? `<button class="btn green" data-a="ok">${belt ? '✓ Colocar' : b.moving ? '✓ Colocar aqui' : '✓ Construir aqui'}</button>` : ''}
       </div>`;
     bar.querySelector('[data-a=cancel]')?.addEventListener('click', () => this.app.cancelBuild());
     bar.querySelectorAll('[data-a=rot]').forEach((x) => x.addEventListener('click', () => { this.app.rotateBuild(); this.refreshBuildBar(); }));
     bar.querySelector('[data-a=ok]')?.addEventListener('click', () => this.app.confirmBuild());
-    bar.querySelectorAll('[data-n]').forEach((x) => x.addEventListener('click', () => { const [dx, dy] = (x as HTMLElement).dataset.n!.split(',').map(Number); this.app.nudgeBuild(dx, dy); }));
+    // suggested spots + the chip that rides above the ghost
+    const layer = h(`<div class="spots"></div>`);
+    b.spots.forEach((sp, i) => {
+      const pin = h(`<button class="spot-pin" data-i="${i}"><span class="st">⭐</span>${sp.garbage > 0 ? `<span class="g">${fmtShort(sp.garbage)}</span>` : ''}</button>`);
+      pin.addEventListener('click', (e) => { e.stopPropagation(); this.app.jumpToSpot(i); });
+      layer.appendChild(pin);
+    });
+    this.ghostChip = h(`<div class="ghost-chip"></div>`);
+    layer.appendChild(this.ghostChip);
+    this.el.layer.appendChild(layer);
+    this.spotLayer = layer;
     this.refreshBuildBar();
+    this.positionBuildOverlay();
+  }
+
+  /** Keeps the spot pins and the ghost chip glued to the world (called every frame). */
+  positionBuildOverlay() {
+    const b = this.app.build, layer = this.spotLayer;
+    if (!b || !layer) return;
+    const r = this.app.renderer;
+    const s = MACHINES[b.type].size;
+    const pins = layer.querySelectorAll<HTMLElement>('.spot-pin');
+    pins.forEach((pin, i) => {
+      const sp = b.spots[i];
+      const here = sp && sp.tx === b.tx && sp.ty === b.ty;
+      const p = r.worldToScreen((sp.tx + s / 2) * TILE, sp.ty * TILE);
+      pin.style.transform = `translate(${Math.round(p.x)}px, ${Math.round(p.y)}px)`;
+      pin.classList.toggle('here', !!here);
+    });
+    if (this.ghostChip) {
+      const p = r.worldToScreen((b.tx + s / 2) * TILE, b.ty * TILE);
+      this.ghostChip.style.transform = `translate(${Math.round(p.x)}px, ${Math.round(p.y - 6)}px)`;
+    }
   }
 
   refreshBuildBar() {
@@ -254,18 +286,21 @@ export class UI {
     if (!b) return;
     const g = this.game;
     const bar = this.el.buildbar;
-    const touch = document.body.classList.contains('touch');
+    const def = MACHINES[b.type];
     const belt = isBelt(b.type);
     const msg = bar.querySelector('.bb-msg') as HTMLElement | null;
-    let tip = belt ? (touch ? 'Arraste para mover · ↻ muda a direção · cada toque em Colocar avança uma casa' : 'Clique e arraste para fazer a linha') : touch ? 'Arraste em qualquer lugar para mover · toque para pular até um lugar' : 'Clique para construir';
-    let warn = false;
-    if (!belt && !b.problem && b.type !== 'recycler') {
-      const s = MACHINES[b.type].size;
-      const inService = g.machines.hubs().some((h) => Math.hypot(centerX(h) - b.tx - s / 2, centerY(h) - b.ty - s / 2) <= hubRadius(h, g.d));
-      if (!inService) { tip = 'Fora do círculo do depósito: depois toque na máquina e use 🔗 Conectar'; warn = true; }
-      else tip = '✓ Ótimo lugar: dentro da área do depósito, entrega sozinha';
+    let tip = '', chip = '', cls = 'good';
+    if (b.problem) { tip = '⚠ ' + b.problem; cls = 'bad'; }
+    else if (belt) { tip = 'Leva o material até o depósito'; chip = '✓'; }
+    else {
+      const inService = g.inServiceArea(b.type, b.tx, b.ty);
+      const reach = def.role === 'coleta' ? (b.reach > 0 ? `alcança ${fmtShort(b.reach)} de lixo${def.heavy ? '' : ' leve'}` : 'nenhum lixo ao alcance') : '';
+      if (def.role === 'coleta' && b.reach === 0) { cls = 'warn'; tip = '⚠ Nenhum lixo ao alcance aqui'; chip = '0'; }
+      else if (!inService && b.type !== 'recycler') { cls = 'warn'; tip = `${reach ? reach + ' · ' : ''}fora do depósito: depois use 🔗 Conectar`; chip = reach ? fmtShort(b.reach) : '!'; }
+      else { tip = `✓ ${reach ? reach + ' · ' : ''}entrega sozinha no depósito`; chip = reach ? '✓ ' + fmtShort(b.reach) : '✓'; }
     }
-    if (msg) { msg.textContent = b.problem ? '⚠ ' + b.problem : tip; msg.classList.toggle('bad', !!b.problem); msg.classList.toggle('warn', warn); msg.classList.toggle('good', !b.problem && !warn && !belt); }
+    if (msg) { msg.textContent = tip; msg.className = 'bb-msg ' + cls; }
+    if (this.ghostChip) { this.ghostChip.textContent = chip; this.ghostChip.className = 'ghost-chip ' + cls; }
     const ok = bar.querySelector('[data-a=ok]') as HTMLElement | null;
     if (ok) ok.classList.toggle('disabled', !!b.problem);
   }
@@ -461,53 +496,79 @@ export class UI {
   private machineThumb(type: MachineType): string {
     let url = this.thumbs.get(type);
     if (url) return url;
-    const cv = document.createElement('canvas');
-    cv.width = 144; cv.height = 144;
-    const c = cv.getContext('2d')!;
+    // draw big, then crop to the drawn pixels so every thumbnail is centered and uncut
+    const big = document.createElement('canvas');
+    big.width = 420; big.height = 420;
+    const c = big.getContext('2d', { willReadFrequently: true })!;
     const size = MACHINES[type].size;
-    const sc = size === 1 ? 2.6 : size === 2 ? 1.5 : 1.05;
-    c.translate(72, 80);
+    const sc = 3.2 / size;
+    c.translate(210, 230);
     c.scale(sc, sc);
     c.translate(-(size * TILE) / 2, -(size * TILE) / 2);
     const fake: Machine = { id: -1, type, tx: 0, ty: 0, dir: 0, level: 1, buffer: [0, 0, 0, 0, 0, 0], bufferTotal: 0, work: 0, cursor: 0, collected: 0, belt: [{ mat: 0, units: 1, sorted: false, t: 0.5 }], bots: [], status: 'working', targets: null, targetsRadius: 0, anim: 0, lastTarget: -1, outConveyor: -1, inService: false, linked: true, deliverT: 0, built: 1 };
     if (isBelt(type)) drawBelt(c, fake, this.game, 0.3);
     else drawMachine(c, fake, this.game, 0.3, this.app.fx, false);
+    const px = c.getImageData(0, 0, 420, 420).data;
+    let x0 = 420, y0 = 420, x1 = 0, y1 = 0;
+    for (let y = 0; y < 420; y++) for (let x = 0; x < 420; x++) if (px[(y * 420 + x) * 4 + 3] > 24) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+    const cv = document.createElement('canvas');
+    cv.width = 160; cv.height = 160;
+    if (x1 > x0) {
+      const w = x1 - x0 + 1, hgt = y1 - y0 + 1, k = 148 / Math.max(w, hgt);
+      cv.getContext('2d')!.drawImage(big, x0, y0, w, hgt, 80 - (w * k) / 2, 80 - (hgt * k) / 2, w * k, hgt * k);
+    }
     url = cv.toDataURL();
     this.thumbs.set(type, url);
     return url;
   }
 
+  private openBuildCard: MachineType | null = null;
+
   private renderBuild(body: HTMLElement) {
     const g = this.game;
-    let html = `<div class="flowhint"><b>Como funciona:</b> máquinas de <b>coleta</b> tiram o lixo → a <b>logística</b> leva até o depósito (ou elas ficam no círculo azul) → o <b>processamento</b> faz o pátio do depósito dar conta.<div class="yardline">Pátio do depósito: <b>${fmtInt(g.yardTotal)} / ${fmtInt(g.yardCap())}</b> · vazão <b>${fmtShort(g.processRate())}/s</b></div></div>`;
+    const yardPct = Math.min(100, (g.yardTotal / Math.max(1, g.yardCap())) * 100);
+    let html = `<div class="flow"><span class="fs coleta">① Coletar</span><i>→</i><span class="fs logistica">② Levar</span><i>→</i><span class="fs processamento">③ Processar</span></div>
+      <div class="yardbar"><span>Pátio do depósito</span><b>${fmtInt(g.yardTotal)} / ${fmtInt(g.yardCap())}</b><span>· ${fmtShort(g.processRate())}/s</span><div class="yb"><i style="width:${yardPct}%"></i></div></div>`;
     const roles: MachineRole[] = ['coleta', 'logistica', 'processamento', 'deposito'];
+    const roleShort: Record<MachineRole, string> = { coleta: 'Coleta', logistica: 'Logística', processamento: 'Processamento', deposito: 'Depósitos' };
+    const roleSub: Record<MachineRole, string> = { coleta: 'tiram o lixo do chão', logistica: 'levam até o depósito', processamento: 'o depósito dar conta', deposito: 'recebem tudo' };
     for (const role of roles) {
       const types = BUILD_ORDER.filter((t) => MACHINES[t].role === role);
       if (!types.length) continue;
-      html += `<h3 class="role role-${role}">${ROLE_NAMES[role]}</h3><div class="grid">`;
+      html += `<h3 class="mrole ${role}">${roleShort[role]} <small>${roleSub[role]}</small></h3><div class="mgrid">`;
       for (const t of types) {
         const def = MACHINES[t];
         const unl = g.isUnlocked(t);
         const cost = g.machineCost(t);
         const miss = g.missingFor(cost);
         const owned = g.machines.count(t);
+        const open = this.openBuildCard === t;
         const stats: string[] = [];
-        if (def.rate > 0) stats.push(`<span>⚡ ${t === 'robots' ? `${def.rate}/s cada` : `${def.rate}/s`}</span>`);
-        if (def.radius > 0 && def.role === 'coleta') stats.push(`<span>◎ ${def.radius} m</span>`);
-        if (def.role === 'coleta') stats.push(def.heavy ? `<span class="hv">🏋 ergue pesado</span>` : `<span class="lt">só leve</span>`);
-        if (def.process > 0) stats.push(`<span>⚙ +${def.process}/s</span>`, `<span>▦ +${def.yard} pátio</span>`);
-        if (def.buffer > 0) stats.push(`<span>▣ ${def.buffer}</span>`);
-        stats.push(`<span>${def.size}×${def.size}</span>`);
-        const lockTxt = def.unlock ? `Requer: ${UPGRADE_MAP[def.unlock].name}` : '';
-        html += `<div class="card ${unl ? '' : 'locked'}"><div class="top"><img src="${this.machineThumb(t)}" alt=""/><div class="info"><div class="t">${def.name}${owned ? ` <span class="own">×${owned}</span>` : ''}</div><div class="stats">${stats.join('')}</div></div></div>
-          <div class="func">${esc(def.func)}</div>
-          <div class="d">${esc(def.desc)}</div>
-          <div class="foot">${unl ? `<div class="costs">${this.costHtml(cost)}</div><button class="btn ${miss ? 'disabled' : 'green'}" data-b="${t}">${miss ? 'Faltam recursos' : 'Construir'}</button>` : `<div class="lock">🔒 ${esc(lockTxt)}</div>`}</div>
-          ${unl && miss ? `<div class="miss">${esc(miss)}</div>` : ''}</div>`;
+        if (def.rate > 0) stats.push(`⚡ ${def.rate}/s${t === 'robots' ? ' cada' : ''}`);
+        if (def.radius > 0 && def.role === 'coleta') stats.push(`◎ ${def.radius} m`);
+        if (def.process > 0) stats.push(`⚙ +${def.process}/s`);
+        if (def.yard > 0) stats.push(`▦ +${def.yard}`);
+        const tag = def.role === 'coleta' ? (def.heavy ? '<span class="tag hv">🏋 pesado</span>' : '<span class="tag">leve</span>') : '';
+        const lockTxt = def.unlock ? UPGRADE_MAP[def.unlock].name : '';
+        html += `<div class="mcard ${role} ${unl ? (miss ? 'short' : 'ready') : 'locked'} ${open ? 'open' : ''}" data-card="${t}">
+          <div class="art"><img src="${this.machineThumb(t)}" alt=""/>${owned ? `<span class="cnt">×${owned}</span>` : ''}${tag}${unl ? '' : '<span class="lk">🔒</span>'}</div>
+          <div class="nm">${def.short}<span class="more">${open ? '▴' : 'ⓘ'}</span></div>
+          <div class="fn">${esc(def.func)}</div>
+          ${open ? `<div class="ds">${esc(def.desc)}</div><div class="st">${stats.map((x) => `<span>${x}</span>`).join('')}<span>${def.size}×${def.size}</span>${def.buffer ? `<span>▣ ${def.buffer}</span>` : ''}</div>` : stats.length ? `<div class="st">${stats.slice(0, 2).map((x) => `<span>${x}</span>`).join('')}</div>` : ''}
+          ${unl ? `<div class="cst">${this.costHtml(cost)}</div><button class="btn ${miss ? 'disabled' : 'green'}" data-b="${t}">${miss ? 'Falta recurso' : owned ? 'Construir +1' : 'Construir'}</button>` : `<div class="lockline">Desbloqueie na árvore:<b>${esc(lockTxt)}</b></div>`}
+        </div>`;
       }
       html += `</div>`;
     }
     if (!this.put(body, html)) return;
+    body.querySelectorAll('[data-card]').forEach((c) => c.addEventListener('click', (e) => {
+      if ((e.target as HTMLElement).closest('[data-b]')) return;
+      const t = (c as HTMLElement).dataset.card as MachineType;
+      if (!g.isUnlocked(t) && !(e.target as HTMLElement).closest('.nm, .art')) { this.openModal('upgrades'); return; }
+      this.openBuildCard = this.openBuildCard === t ? null : t;
+      this.app.audio.play('click', 0.5);
+      this.renderModal(true);
+    }));
     body.querySelectorAll('[data-b]').forEach((b) => b.addEventListener('click', () => {
       const t = (b as HTMLElement).dataset.b as MachineType;
       if (g.missingFor(g.machineCost(t))) { this.app.audio.play('error'); this.flash(b); return; }

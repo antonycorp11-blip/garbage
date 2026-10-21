@@ -37,7 +37,7 @@ export const DISCOVERIES: DiscoveryDef[] = [
   },
   {
     id: 'diary2', name: 'Página de Diário Manchada', size: 1, dist: [24, 36], openTime: 0, effect: 'none', money: 200,
-    text: '"Dia 340. Achei o chão. Era marrom. Chorei. O chão não se importou."',
+    text: '"Dia 340. Achei o chão. Era marrom. Chorei óleo. O chão não se importou."',
   },
   {
     id: 'beetle', name: 'Fusca Banhado a Ouro', size: 2, dist: [30, 42], openTime: 4, effect: 'none', money: 18000,

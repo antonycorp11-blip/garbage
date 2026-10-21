@@ -125,9 +125,10 @@ export class Input {
   // ------------------------------------------------------------------ touch logic (shared)
   private touchDown(id: number, x: number, y: number) {
     const worldTracks = [...this.pointers.values()].filter((p) => p.role !== 'joy');
-    if (worldTracks.length === 1 && !this.sink.buildMode()) {
-      // a second finger outside the joystick => pinch zoom
+    if (worldTracks.length === 1) {
+      // a second finger outside the joystick => pinch zoom (the first finger's gesture ends)
       const other = worldTracks[0];
+      if (other.role === 'world') this.sink.worldUp(other.x, other.y, true, false);
       other.role = 'pinch';
       this.pointers.set(id, { x, y, sx: x, sy: y, t: performance.now(), role: 'pinch' });
       this.pinchDist = Math.hypot(other.x - x, other.y - y);

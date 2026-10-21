@@ -3,13 +3,13 @@ export interface Milestone { pct: number; text: string }
 export const SENDER = 'Sr. Valdemar, antigo proprietário';
 
 export const INTRO = [
-  'Parabéns pela compra do terreno! Ele vem com um pequeno detalhe: 1.000.000 de unidades de lixo.',
+  'Bip-bop! Parabéns pela compra do terreno, pequeno robô! Ele vem com um pequeno detalhe: 1.000.000 de unidades de lixo.',
   'Use WASD/setas para andar e segure o botão do mouse (ou ESPAÇO) sobre o lixo para coletar. No celular: joystick à esquerda, botão COLETAR à direita.',
   'Quando a mochila encher, volte ao depósito no centro. Ele descarrega e vende tudo. Boa sorte. Você vai precisar.',
 ];
 
 export const MILESTONES: Milestone[] = [
-  { pct: 0.0001, text: 'Você retirou 0,01% do lixo. A humanidade agradece. Mais ou menos.' },
+  { pct: 0.0001, text: 'Você retirou 0,01% do lixo. A robotidade agradece. Mais ou menos.' },
   { pct: 0.001, text: '0,1% concluído! Nesse ritmo você termina em... deixa pra lá. Continue.' },
   { pct: 0.005, text: 'Meio por cento! Encontramos um rato aplaudindo. Ou tossindo.' },
   { pct: 0.01, text: '1% do terreno limpo. Alguém já sugeriu construir um estacionamento.' },

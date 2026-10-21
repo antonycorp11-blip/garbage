@@ -17,7 +17,14 @@ import './ui/style.css';
 interface Settings { music: number; sfx: number; quality: number; ranges: boolean }
 const SETTINGS_KEY = 'garbage-kingdom-settings';
 
-interface BuildState extends BuildPreview { painting: boolean; lastTx: number; lastTy: number; placedId: number; drag: { sx: number; sy: number; tx: number; ty: number } | null; moving: { level: number; fromTx: number; fromTy: number; fromDir: number } | null }
+interface BuildState extends BuildPreview { painting: boolean; lastTx: number; lastTy: number; placedId: number; /** touch gesture in progress: dragging the ghost itself, or panning the camera */
+  grab: { mode: 'ghost' | 'pan'; sx: number; sy: number; x: number; y: number; ox: number; oy: number; cx: number; cy: number; moved: boolean } | null;
+  /** build camera (touch): free to pan independently from the player */
+  cam: { x: number; y: number };
+  /** suggested places, best first */
+  spots: { tx: number; ty: number; garbage: number; service: boolean }[];
+  /** garbage within reach of the ghost */
+  reach: number; moving: { level: number; fromTx: number; fromTy: number; fromDir: number } | null }
 
 export class App implements PointerSink {
   game: Game;
@@ -137,12 +144,10 @@ export class App implements PointerSink {
     const p = this.game.player;
     const s = MACHINES[type].size;
     let tx = Math.floor(p.tx + p.fx * 2 - s / 2 + 0.5), ty = Math.floor(p.ty + p.fy * 2 - s / 2 + 0.5);
-    if (this.input.touch) {
-      // suggest the best nearby valid spot so the player only has to confirm
-      const spot = this.game.findSpot(type, p.tx, p.ty);
-      if (spot) { tx = spot.tx; ty = spot.ty; }
-    }
-    this.build = { type, tx, ty, dir: this.build?.dir ?? 0, problem: null, painting: false, lastTx: -1, lastTy: -1, placedId: -1, drag: null, moving: null };
+    const spots = isBelt(type) ? [] : this.game.findSpots(type, p.tx, p.ty, 4);
+    // touch: start on the best spot so the player may only have to confirm
+    if (spots.length && this.input.touch) { tx = spots[0].tx; ty = spots[0].ty; }
+    this.build = { type, tx, ty, dir: this.build?.dir ?? 0, problem: null, painting: false, lastTx: -1, lastTy: -1, placedId: -1, grab: null, moving: null, spots, reach: 0, cam: { x: (tx + s / 2) * TILE, y: (ty + s / 2) * TILE } };
     this.ui.select(null);
     this.updateGhostProblem();
     this.ui.showBuildBar();
@@ -154,12 +159,9 @@ export class App implements PointerSink {
     if (!info) return;
     this.ui.select(null);
     const s = MACHINES[info.type].size;
-    let tx = info.tx, ty = info.ty;
-    const p = this.game.player;
-    const spot = this.game.findSpot(info.type, p.tx, p.ty);
-    if (spot && this.input.touch) { tx = spot.tx; ty = spot.ty; }
-    void s;
-    this.build = { type: info.type, tx, ty, dir: info.dir, problem: null, painting: false, lastTx: -1, lastTy: -1, placedId: -1, drag: null, moving: { level: info.level, fromTx: info.tx, fromTy: info.ty, fromDir: info.dir } };
+    // the ghost starts where the machine was; suggestions are around it
+    const spots = isBelt(info.type) ? [] : this.game.findSpots(info.type, info.tx + s / 2, info.ty + s / 2, 4);
+    this.build = { type: info.type, tx: info.tx, ty: info.ty, dir: info.dir, problem: null, painting: false, lastTx: -1, lastTy: -1, placedId: -1, grab: null, moving: { level: info.level, fromTx: info.tx, fromTy: info.ty, fromDir: info.dir }, spots, reach: 0, cam: { x: (info.tx + s / 2) * TILE, y: (info.ty + s / 2) * TILE } };
     this.updateGhostProblem();
     this.ui.showBuildBar();
   }
@@ -183,6 +185,55 @@ export class App implements PointerSink {
     const b = this.build;
     if (!b) return;
     b.problem = this.game.placeProblem(b.type, b.tx, b.ty) ?? (b.moving ? null : this.game.missingFor(this.game.machineCost(b.type)));
+    b.reach = this.game.reachGarbage(b.type, b.tx, b.ty, MACHINES[b.type].radius > 8 ? 2 : 1);
+  }
+
+  /** Move the ghost to a suggested spot (and the camera with it). */
+  jumpToSpot(i: number) {
+    const b = this.build;
+    const sp = b?.spots[i];
+    if (!b || !sp) return;
+    const s = MACHINES[b.type].size;
+    b.tx = sp.tx; b.ty = sp.ty;
+    b.cam = { x: (sp.tx + s / 2) * TILE, y: (sp.ty + s / 2) * TILE };
+    this.updateGhostProblem();
+    this.ui.refreshBuildBar();
+    this.audio.play('click', 0.5);
+  }
+
+  /** Belt painting: the ghost follows the pointer and lays a belt on every new tile. */
+  private paintTo(sx: number, sy: number) {
+    const b = this.build!;
+    const pt = b.tx, pty = b.ty;
+    this.ghostAt(sx, sy);
+    if (!b.painting || (b.tx === pt && b.ty === pty) || (b.tx === b.lastTx && b.ty === b.lastTy)) return;
+    // point the previous belt toward the new tile
+    if (b.lastTx >= 0) {
+      const dx = b.tx - b.lastTx, dy = b.ty - b.lastTy;
+      if (Math.abs(dx) + Math.abs(dy) === 1) {
+        b.dir = dx === 1 ? 0 : dy === 1 ? 1 : dx === -1 ? 2 : 3;
+        const prev = this.game.machines.at(b.lastTx, b.lastTy);
+        if (prev && isBelt(prev.type) && prev.id === b.placedId) { prev.dir = b.dir; this.game.machines.linksDirty = true; }
+      } else if (Math.abs(dx) + Math.abs(dy) > 1) {
+        // fill gaps along the drag with an L path
+        const stepX = Math.sign(dx), stepY = Math.sign(dy);
+        let cx = b.lastTx, cy = b.lastTy;
+        const tx = b.tx, ty = b.ty;
+        while (cx !== tx || cy !== ty) {
+          const prev = this.game.machines.at(cx, cy);
+          const ndir = cx !== tx ? (stepX > 0 ? 0 : 2) : (stepY > 0 ? 1 : 3);
+          if (prev && isBelt(prev.type) && prev.id === b.placedId) { prev.dir = ndir; this.game.machines.linksDirty = true; }
+          if (cx !== tx) cx += stepX; else cy += stepY;
+          b.tx = cx; b.ty = cy; b.dir = ndir;
+          this.updateGhostProblem();
+          if (!b.problem) this.place(); else { b.lastTx = cx; b.lastTy = cy; b.placedId = -1; }
+        }
+        return;
+      }
+    }
+    this.updateGhostProblem();
+    if (!b.problem) this.place();
+    else { b.lastTx = b.tx; b.lastTy = b.ty; b.placedId = -1; }
   }
 
   private ghostAt(sx: number, sy: number) {
@@ -214,13 +265,13 @@ export class App implements PointerSink {
     const m = this.game.machines.at(b.tx, b.ty);
     b.placedId = m ? m.id : -1;
     b.lastTx = b.tx; b.lastTy = b.ty;
-    if (this.input.touch && this.build) {
+    if (this.input.touch && this.build && !b.painting) {
       // ready for the next one: belts advance along their direction, machines jump to the next free spot
       if (isBelt(b.type)) { b.tx += DX[b.dir]; b.ty += DY[b.dir]; }
       else {
         const s = MACHINES[b.type].size;
-        const spot = this.game.findSpot(b.type, b.tx + s / 2, b.ty + s / 2);
-        if (spot) { b.tx = spot.tx; b.ty = spot.ty; }
+        b.spots = this.game.findSpots(b.type, b.tx + s / 2, b.ty + s / 2, 4);
+        if (b.spots.length) { b.tx = b.spots[0].tx; b.ty = b.spots[0].ty; b.cam = { x: (b.tx + s / 2) * TILE, y: (b.ty + s / 2) * TILE }; }
       }
       this.updateGhostProblem();
     }
@@ -238,8 +289,19 @@ export class App implements PointerSink {
     const b = this.build;
     if (b) {
       if (touch) {
-        // touch: the screen works like a trackpad, so the finger never hides the ghost
-        b.drag = { sx, sy, tx: b.tx, ty: b.ty };
+        // touch: grab the ghost to drag it (belts: draw a line), anything else pans the map
+        const w = this.renderer.screenToWorld(sx, sy);
+        const s = MACHINES[b.type].size;
+        const gx = (b.tx + s / 2) * TILE, gy = (b.ty + s / 2) * TILE;
+        const pad = (s / 2 + 0.8) * TILE;
+        const hit = Math.abs(w.x - gx) <= pad && Math.abs(w.y - gy) <= pad;
+        b.grab = { mode: hit ? 'ghost' : 'pan', sx, sy, x: sx, y: sy, ox: gx - w.x, oy: gy - w.y, cx: b.cam.x, cy: b.cam.y, moved: false };
+        if (hit && isBelt(b.type)) {
+          b.painting = true;
+          b.lastTx = -1;
+          this.updateGhostProblem();
+          if (!b.problem) this.place();
+        }
         return false;
       }
       this.ghostAt(sx, sy);
@@ -261,73 +323,53 @@ export class App implements PointerSink {
     const b = this.build;
     if (!b) return;
     if (touch) {
-      if (!b.drag) return;
-      const k = 1 / (this.renderer.cam.zoom * TILE);
-      const nx = b.drag.tx + Math.round((sx - b.drag.sx) * k * 1.15), ny = b.drag.ty + Math.round((sy - b.drag.sy) * k * 1.15);
-      if (nx !== b.tx || ny !== b.ty) {
-        if (isBelt(b.type)) { const dx = nx - b.tx, dy = ny - b.ty; if (Math.abs(dx) + Math.abs(dy) === 1) b.dir = dx === 1 ? 0 : dy === 1 ? 1 : dx === -1 ? 2 : 3; }
-        b.tx = nx; b.ty = ny;
-        this.updateGhostProblem();
-        this.ui.refreshBuildBar();
-        this.audio.play('click', 0.25);
+      const gr = b.grab;
+      if (!gr) return;
+      gr.x = sx; gr.y = sy;
+      if (Math.hypot(sx - gr.sx, sy - gr.sy) > 10) gr.moved = true;
+      if (gr.mode === 'pan') {
+        b.cam.x = gr.cx - (sx - gr.sx) / this.renderer.cam.zoom;
+        b.cam.y = gr.cy - (sy - gr.sy) / this.renderer.cam.zoom;
+        return;
       }
+      if (b.painting) { this.paintTo(sx, sy); this.ui.refreshBuildBar(); return; }
+      this.dragGhost();
       return;
     }
-    const pt = b.tx, pty = b.ty;
-    this.ghostAt(sx, sy);
-    if (b.painting && isBelt(b.type) && (b.tx !== pt || b.ty !== pty)) {
-      // conveyor painting: point the previous belt toward the new tile
-      if (b.lastTx >= 0) {
-        const dx = b.tx - b.lastTx, dy = b.ty - b.lastTy;
-        if (Math.abs(dx) + Math.abs(dy) === 1) {
-          b.dir = dx === 1 ? 0 : dy === 1 ? 1 : dx === -1 ? 2 : 3;
-          const prev = this.game.machines.at(b.lastTx, b.lastTy);
-          if (prev && isBelt(prev.type) && prev.id === b.placedId) { prev.dir = b.dir; this.game.machines.linksDirty = true; }
-        } else if (Math.abs(dx) + Math.abs(dy) > 1) {
-          // fill gaps along the drag with an L path
-          const stepX = Math.sign(dx), stepY = Math.sign(dy);
-          let cx = b.lastTx, cy = b.lastTy;
-          const tx = b.tx, ty = b.ty;
-          while (cx !== tx || cy !== ty) {
-            const prev = this.game.machines.at(cx, cy);
-            let ndir: number;
-            if (cx !== tx) { ndir = stepX > 0 ? 0 : 2; } else { ndir = stepY > 0 ? 1 : 3; }
-            if (prev && isBelt(prev.type) && prev.id === b.placedId) { prev.dir = ndir; this.game.machines.linksDirty = true; }
-            if (cx !== tx) cx += stepX; else cy += stepY;
-            b.tx = cx; b.ty = cy; b.dir = ndir;
-            this.updateGhostProblem();
-            if (!b.problem) this.place(); else { b.lastTx = cx; b.lastTy = cy; b.placedId = -1; }
-          }
-          return;
-        }
-      }
-      this.updateGhostProblem();
-      if (!b.problem) this.place();
-      else { b.lastTx = b.tx; b.lastTy = b.ty; b.placedId = -1; }
-    }
+    if (b.painting && isBelt(b.type)) this.paintTo(sx, sy);
+    else this.ghostAt(sx, sy);
+  }
+
+  /** Ghost follows the finger, keeping the grab offset (so it never jumps under the finger). */
+  private dragGhost() {
+    const b = this.build!, gr = b.grab!;
+    const w = this.renderer.screenToWorld(gr.x, gr.y);
+    const s = MACHINES[b.type].size;
+    const nx = Math.floor((w.x + gr.ox) / TILE - s / 2 + 0.5), ny = Math.floor((w.y + gr.oy) / TILE - s / 2 + 0.5);
+    if (nx === b.tx && ny === b.ty) return;
+    b.tx = nx; b.ty = ny;
+    this.updateGhostProblem();
+    this.ui.refreshBuildBar();
+    this.audio.play('click', 0.2);
   }
 
   worldUp(sx: number, sy: number, touch: boolean, tap: boolean) {
     const b = this.build;
     if (!b) return;
-    if (b.painting) { b.painting = false; return; }
+    const gr = b.grab;
+    b.grab = null;
+    if (b.painting) {
+      b.painting = false;
+      // after drawing, park the ghost on the tile after the last belt, ready to continue
+      if (touch && b.lastTx >= 0 && b.placedId >= 0 && b.tx === b.lastTx && b.ty === b.lastTy) { b.tx += DX[b.dir]; b.ty += DY[b.dir]; this.updateGhostProblem(); }
+      this.ui.refreshBuildBar();
+      return;
+    }
     if (touch) {
-      // a quick tap jumps the ghost straight to that tile
-      if (tap) { this.ghostAt(sx, sy); this.audio.play('click', 0.4); }
-      b.drag = null;
+      // a quick tap on the map jumps the ghost straight to that tile
+      if (gr && gr.mode === 'pan' && !gr.moved && tap) { this.ghostAt(sx, sy); this.audio.play('click', 0.4); }
       this.ui.refreshBuildBar();
     }
-  }
-
-  /** Nudge the ghost one tile (on-screen arrows). */
-  nudgeBuild(dx: number, dy: number) {
-    const b = this.build;
-    if (!b) return;
-    b.tx += dx; b.ty += dy;
-    if (isBelt(b.type)) b.dir = dx === 1 ? 0 : dy === 1 ? 1 : dx === -1 ? 2 : 3;
-    this.updateGhostProblem();
-    this.ui.refreshBuildBar();
-    this.audio.play('click', 0.4);
   }
 
   confirmBuild() {
@@ -429,11 +471,26 @@ export class App implements PointerSink {
     if (this.build) {
       this.updateGhostProblem();
       const s = MACHINES[this.build.type].size;
-      this.renderer.focus = this.input.touch ? { x: (this.build.tx + s / 2) * TILE, y: (this.build.ty + s / 2) * TILE } : null;
+      const b = this.build;
+      if (this.input.touch) {
+        // dragging the ghost near a screen edge scrolls the map
+        const gr = b.grab;
+        if (gr && gr.mode === 'ghost' && !b.painting) {
+          const m = 56, sp = 420 * dt / this.renderer.cam.zoom;
+          const ex = gr.x < m ? -1 : gr.x > this.renderer.W - m ? 1 : 0;
+          const ey = gr.y < m + 40 ? -1 : gr.y > this.renderer.H - m - 150 ? 1 : 0;
+          if (ex || ey) { b.cam.x += ex * sp; b.cam.y += ey * sp; this.dragGhost(); }
+        }
+        const c = this.renderer.clampView(b.cam.x, b.cam.y);
+        b.cam.x = c.x; b.cam.y = c.y;
+        this.renderer.focus = b.cam;
+      } else this.renderer.focus = null;
+      void s;
     } else this.renderer.focus = null;
     this.fx.update(dt);
     this.renderer.chunks.rendersThisFrame = 0;
     try { this.renderer.draw(this.time, dt, this.build); } catch (e) { this.reportError(e); }
+    if (this.build) this.ui.positionBuildOverlay();
     try { this.ui.update(dt); } catch (e) { this.reportError(e); }
     this.saveT += dt;
     if (this.saveT > 15 && this.started) { this.saveT = 0; this.save(); }

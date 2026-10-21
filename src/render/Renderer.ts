@@ -49,6 +49,16 @@ export class Renderer {
 
   get minZoom() { return Math.max(0.45, Math.min(this.W, this.H) / 1100); }
 
+  /** Clamp a camera center the same way the renderer does. */
+  clampView(x: number, y: number) {
+    const hw = this.W / 2 / this.cam.zoom, hh = this.H / 2 / this.cam.zoom;
+    return { x: clamp(x, Math.min(hw, WORLD_PX / 2), Math.max(WORLD_PX - hw, WORLD_PX / 2)), y: clamp(y, Math.min(hh, WORLD_PX / 2), Math.max(WORLD_PX - hh, WORLD_PX / 2)) };
+  }
+
+  worldToScreen(x: number, y: number) {
+    return { x: (x - this.cam.x) * this.cam.zoom + this.W / 2, y: (y - this.cam.y) * this.cam.zoom + this.H / 2 };
+  }
+
   screenToWorld(sx: number, sy: number) {
     return { x: (sx - this.W / 2) / this.cam.zoom + this.cam.x, y: (sy - this.H / 2) / this.cam.zoom + this.cam.y };
   }
