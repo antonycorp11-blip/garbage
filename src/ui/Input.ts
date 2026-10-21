@@ -25,7 +25,8 @@ export class Input {
   touchCollect = false;
   touchInteract = false;
   keyInteract = false;
-  joy = { id: -1, ox: 0, oy: 0, x: 0, y: 0 };
+  /** `on` marks an active stick: touch ids can be any integer (iOS Safari hands out negative ones) */
+  joy = { on: false, id: 0, ox: 0, oy: 0, x: 0, y: 0 };
   pointers = new Map<number, Track>();
   private pinchDist = 0;
   touch = false;
@@ -74,7 +75,7 @@ export class Input {
         e.preventDefault();
         this.dbg.end++;
         for (const t of Array.from(e.changedTouches)) this.touchUp(t.identifier, t.clientX, t.clientY, e.type === 'touchcancel');
-        if (e.touches.length === 0 && this.joy.id >= 0) this.releaseJoy();
+        if (e.touches.length === 0 && this.joy.on) this.releaseJoy();
       };
       canvas.addEventListener('touchend', end, opts);
       canvas.addEventListener('touchcancel', end, opts);
@@ -133,8 +134,8 @@ export class Input {
       return;
     }
     const leftSide = x < window.innerWidth * 0.5;
-    if (leftSide && this.joy.id < 0 && !this.sink.buildMode()) {
-      this.joy = { id, ox: x, oy: y, x: 0, y: 0 };
+    if (leftSide && !this.joy.on && !this.sink.buildMode()) {
+      this.joy = { on: true, id, ox: x, oy: y, x: 0, y: 0 };
       this.pointers.set(id, { x, y, sx: x, sy: y, t: performance.now(), role: 'joy' });
       this.joyEl.classList.add('on');
       document.body.classList.add('joy-used');
@@ -194,7 +195,7 @@ export class Input {
   }
 
   private releaseJoy() {
-    this.joy = { id: -1, ox: 0, oy: 0, x: 0, y: 0 };
+    this.joy = { on: false, id: 0, ox: 0, oy: 0, x: 0, y: 0 };
     this.joyEl.classList.remove('on');
   }
 
@@ -202,7 +203,7 @@ export class Input {
   resetTouches() {
     this.pointers.clear();
     this.pinchDist = 0;
-    if (this.joy.id >= 0) this.releaseJoy();
+    if (this.joy.on) this.releaseJoy();
   }
 
   bindHold(el: HTMLElement, set: (v: boolean) => void) {
@@ -227,7 +228,7 @@ export class Input {
     if (k.has('KeyW') || k.has('ArrowUp')) y -= 1;
     if (k.has('KeyS') || k.has('ArrowDown')) y += 1;
     if (x && y) { x *= Math.SQRT1_2; y *= Math.SQRT1_2; }
-    if (this.joy.id >= 0) { x += this.joy.x; y += this.joy.y; }
+    if (this.joy.on) { x += this.joy.x; y += this.joy.y; }
     return [x, y];
   }
 }

@@ -416,7 +416,7 @@ export class App implements PointerSink {
         `versão ${__BUILD__}`,
         `started ${this.started} · popup ${this.ui.popupOpen} · modal ${this.ui.modalTab || '-'} · build ${!!this.build}`,
         `touch ${inp.touch} · eventos start ${d.start} move ${d.move} end ${d.end} joyMove ${d.joyMove}`,
-        `joy id ${j.id} x ${f(j.x)} y ${f(j.y)} · dedos ${inp.pointers.size}`,
+        `joy on ${j.on} id ${j.id} x ${f(j.x)} y ${f(j.y)} · dedos ${inp.pointers.size}`,
         `entrada ${f(mx)}, ${f(my)} · dt ${f(dt * 1000)}ms`,
         `jogador ${f(p.tx)}, ${f(p.ty)} · vel ${f(p.vx)}, ${f(p.vy)} · speed ${f(g.d.moveSpeed)}`,
         `andando ${p.moving} · fantasma ${f(g.ghostT)} · ${navigator.userAgent.slice(0, 90)}`,

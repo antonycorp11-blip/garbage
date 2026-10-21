@@ -543,4 +543,4 @@ h3.role-coleta { color: #ffb02e; } h3.role-logistica { color: #38bdf8; } h3.role
   body.has-yard .msgs { top: calc(192px + var(--safe-t)); }
 }
 
-.ver { margin: 10px 0 0; font-size: 11px; opacity: .55; user-select: none; -webkit-user-select: none; padding: 6px; cursor: default; }
+.ver { margin: 10px 0 0; font-size: 11px; opacity: .55; user-select: none; -webkit-user-select: none; padding: 6px; cursor: pointer; }
