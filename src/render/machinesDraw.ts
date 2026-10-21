@@ -241,7 +241,7 @@ function drawCollector(c: C, m: Machine, x: number, y: number, time: number, wor
   const fill = Math.min(1, m.bufferTotal / cap);
   const wx = x + 9, wy = y - 3 + bob;
   c.save(); rrect(c, wx + 1, wy + 1, 12, 12, 4.3); c.clip();
-  c.fillStyle = '#17132a'; c.fillRect(wx, wy, 14, 14);
+  c.fillStyle = lin(c, 0, wy, 0, wy + 14, [[0, '#3f6f8f'], [1, '#22324f']]); c.fillRect(wx, wy, 14, 14);
   if (fill > 0) {
     const top = wy + 13 - 12 * fill;
     c.fillStyle = 'rgba(95,242,255,0.18)'; c.fillRect(wx, top, 14, 14);
@@ -337,7 +337,7 @@ function drawArm(c: C, m: Machine, x: number, y: number, time: number, working: 
   const open = holding ? 0.15 : 0.7;
   c.save(); c.translate(ex, ey);
   if (holding) {
-    const k = (m.id + Math.floor(time * 0.9 + m.id * 0.13)) % CHUNK_COLS.length;
+    const k = Math.abs(m.id + Math.floor(time * 0.9 + m.id * 0.13)) % CHUNK_COLS.length;
     gem(c, 0, 6.5, 4.6, CHUNK_COLS[k], 0.4);
     gem(c, 3, 8, 2.6, shade(CHUNK_COLS[k], -0.15), -0.3);
   }
@@ -360,7 +360,18 @@ function drawArm(c: C, m: Machine, x: number, y: number, time: number, working: 
 function crusherBase(level: number) {
   return cachedLayer(`crush3-${level}`, -10, -56, 86, 126, (c) => {
     groundShadow(c, 32, 60, 34, 10, 0.45);
+    // back wall of the press bay
+    rrect(c, 8, -24, 48, 44, 4); c.fillStyle = SCI.violetD; c.fill();
+    c.fillStyle = 'rgba(255,255,255,0.06)'; for (let i = 0; i < 5; i++) c.fillRect(10, -20 + i * 8, 44, 3);
+    rrect(c, 8, -24, 48, 44, 4); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
     box34(c, 2, 14, 60, 16, 32, SCI.shell, 5);
+    // control strip on the front
+    rrect(c, 22, 50.5, 20, 2, 1); c.fillStyle = SCI.teal; c.fill();
+    // warning sign + gauges flanking the window
+    poly(c, [4.5, 46, 8.5, 38.5, 12.5, 46]); c.fillStyle = SCI.gold; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.8; c.stroke();
+    stencil(c, '!', 8.5, 43.6, 4.6, INK);
+    rrect(c, 53.5, 37, 6, 10, 2); c.fillStyle = SCI.violetD; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.7; c.stroke();
+    for (let i = 0; i < 3; i++) { c.fillStyle = [SCI.cyan, SCI.gold, '#f87171'][i]; c.fillRect(55, 38.6 + i * 2.8, 3, 1.6); }
     // front window into the chamber (contents live)
     rrect(c, 12, 34, 40, 16, 4); c.fillStyle = '#17132a'; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
     hazardStripes(c, 3, 53, 58, 4, SCI.orange, SCI.violetD);
@@ -495,6 +506,8 @@ function garageBase(level: number) {
   return cachedLayer(`garage3-${level}`, -10, -40, 86, 112, (c) => {
     groundShadow(c, 32, 60, 36, 10, 0.42);
     rrect(c, -4, 30, 72, 36, 6); c.fillStyle = '#5b4f80'; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.9; c.stroke();
+    c.save(); rrect(c, -4, 30, 72, 36, 6); c.clip(); hazardStripes(c, -4, 62, 72, 4, SCI.orange, SCI.violetD); c.restore();
+    for (const gx of [-1, 65]) for (let i = 0; i < 4; i++) { c.fillStyle = SCI.cyan; c.beginPath(); c.arc(gx, 38 + i * 7, 0.9, 0, 6.28); c.fill(); }
     c.strokeStyle = 'rgba(255,255,255,0.12)'; c.lineWidth = 3; c.setLineDash([3, 3]);
     for (const tx of [22, 42]) { c.beginPath(); c.moveTo(tx, 36); c.lineTo(tx, 64); c.stroke(); }
     c.setLineDash([]);
@@ -663,11 +676,17 @@ function depotBase(stage: number) {
 
     // ---- office pod (back left)
     shell(c, -4, -10, 40, 40, SCI.shell, 14);
-    c.fillStyle = SCI.teal; c.fillRect(-3.5, 14, 39, 3);
-    rrect(c, -4, 14, 40, 3, 1); c.strokeStyle = INK; c.lineWidth = 0.7; c.stroke();
-    for (const wx of [2, 13]) { c.beginPath(); c.arc(wx + 3.5, 3, 4, 0, 6.28); c.fillStyle = '#ffe38a'; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.9; c.stroke(); c.fillStyle = 'rgba(255,255,255,0.6)'; c.beginPath(); c.arc(wx + 2.2, 1.8, 1.2, 0, 6.28); c.fill(); }
-    rrect(c, 23, 0, 9, 16, 4); c.fillStyle = SCI.orange; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.9; c.stroke();
-    c.fillStyle = SCI.orangeD; c.fillRect(30, 8, 1.2, 1.6);
+    c.fillStyle = SCI.teal; c.fillRect(-3.5, 10, 39, 3);
+    rrect(c, -4, 10, 40, 3, 1); c.strokeStyle = INK; c.lineWidth = 0.7; c.stroke();
+    // window band
+    rrect(c, 1, -1, 30, 7, 3.5); c.fillStyle = '#2c3a5c'; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.9; c.stroke();
+    for (let i = 0; i < 4; i++) { rrect(c, 3 + i * 7, 0.4, 5, 4.2, 1.6); c.fillStyle = i === 1 ? '#8fd9ff' : '#ffe38a'; c.fill(); }
+    c.fillStyle = 'rgba(255,255,255,0.5)'; c.fillRect(3, 0.8, 26, 1);
+    // airlock door
+    rrect(c, 9, 18, 14, 11, 5); c.fillStyle = SCI.orange; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.9; c.stroke();
+    c.strokeStyle = SCI.orangeD; c.lineWidth = 0.8; c.beginPath(); c.moveTo(16, 18.5); c.lineTo(16, 29); c.stroke();
+    // vent + beacon mast
+    vent(c, 26, 18, 7, 6, 3);
     // dish on the roof
     pipe(c, [8, -10, 9, -4], 1.2, SCI.violet);
     c.save(); c.translate(8, -12); c.rotate(-0.4);
@@ -691,7 +710,7 @@ function depotBase(stage: number) {
       box34(c, sx - 1, SILO_TOP + SILO_H - 4, SILO_W + 2, 4, 9, SCI.shell, 2);
       c.fillStyle = matCol(i); c.fillRect(sx + 1, SILO_TOP + SILO_H + 2, SILO_W - 2, 3);
       rrect(c, sx + 1, SILO_TOP + SILO_H + 2, SILO_W - 2, 3, 0.8); c.strokeStyle = INK; c.lineWidth = 0.6; c.stroke();
-      rrect(c, sx, SILO_TOP, SILO_W, SILO_H, 5); c.fillStyle = '#1b1631'; c.fill();
+      rrect(c, sx, SILO_TOP, SILO_W, SILO_H, 5); c.fillStyle = lin(c, sx, 0, sx + SILO_W, 0, [[0, '#4a5f8a'], [0.5, '#34406a'], [1, '#262c50']]); c.fill();
       ellipse(c, sx + SILO_W / 2, SILO_TOP - 0.5, SILO_W / 2 + 1, 3); c.fillStyle = SCI.shell; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.9; c.stroke();
       ellipse(c, sx + SILO_W / 2, SILO_TOP - 2, SILO_W / 2 - 1, 2.2); c.fillStyle = shade(SCI.shell, 0.3); c.fill(); c.strokeStyle = INK; c.lineWidth = 0.7; c.stroke();
     }
@@ -706,11 +725,12 @@ function depotBase(stage: number) {
     pipe(c, [104, 74, 98, 74, 98, SILO_TOP - 6], 2.6, SCI.teal);
 
     // ---- sign over the office
-    rrect(c, -6, -34, 48, 13, 5); c.fillStyle = SCI.orange; c.fill();
-    c.fillStyle = SCI.orangeD; c.fillRect(-6, -25, 48, 4);
-    rrect(c, -6, -34, 48, 13, 5); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
-    pipe(c, [4, -21, 4, -12], 1.2, SCI.violet); pipe(c, [32, -21, 32, -12], 1.2, SCI.violet);
-    stencil(c, 'POSTO AVANÇADO', 18, -27.6, 5, '#3b1d05');
+    pipe(c, [2, -21, 2, -10], 1.4, SCI.violet); pipe(c, [36, -21, 36, -10], 1.4, SCI.violet);
+    rrect(c, -10, -36, 58, 15, 6); c.fillStyle = SCI.orange; c.fill();
+    c.fillStyle = SCI.orangeD; c.fillRect(-10, -26, 58, 5);
+    c.fillStyle = 'rgba(255,255,255,0.35)'; c.fillRect(-5, -34, 48, 1.4);
+    rrect(c, -10, -36, 58, 15, 6); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+    stencil(c, 'POSTO AVANÇADO', 19, -28.4, 5.4, '#3b1d05');
 
     // upgrades add modules to the outpost
     if (stage >= 1) { shell(c, 104, 24, 18, 22, SCI.shell, 7); c.fillStyle = SCI.teal; c.fillRect(104.5, 34, 17, 2.4); }

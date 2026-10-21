@@ -1,6 +1,6 @@
 import { CHUNK, CHUNKS, CHUNK_MARGIN, TILE, WORLD_TILES, inWorld, tileIndex } from '../core/constants';
 import { hash2, valueNoise } from '../core/rng';
-import { G_ASPHALT, G_DIRT, G_EARTH } from '../data/regions';
+import { G_ASPHALT, G_DIRT, G_EARTH, G_GRAVEL } from '../data/regions';
 import { World } from '../world/World';
 import { DECO_ROAD_H, DECO_ROAD_V, DECO_RUINWALL } from '../world/worldgen';
 import { GROUND_PERIOD, buildDebris, buildGrime, buildGroundTextures } from './ground';
@@ -16,6 +16,8 @@ export class ChunkRenderer {
   private pool: HTMLCanvasElement[] = [];
   private ground: HTMLCanvasElement[];
   private grime: HTMLCanvasElement;
+  /** soft teal glow painted where junk used to be */
+  private bloom: HTMLCanvasElement;
   private debris: HTMLCanvasElement[];
   private items: TileItem[] = [];
   maxCached: number;
@@ -24,6 +26,8 @@ export class ChunkRenderer {
   constructor(private world: World, private spr: ItemSprites, public RS: number) {
     this.ground = buildGroundTextures(RS);
     this.grime = buildGrime(RS);
+    this.bloom = makeCanvas(32, 32);
+    { const bc = ctx2d(this.bloom); const gr = bc.createRadialGradient(16, 16, 0, 16, 16, 16); gr.addColorStop(0, 'rgba(94,234,212,0.16)'); gr.addColorStop(1, 'rgba(94,234,212,0)'); bc.fillStyle = gr; bc.fillRect(0, 0, 32, 32); }
     this.debris = buildDebris(RS);
     const bytes = CPX * CPX * RS * RS * 4;
     this.maxCached = Math.max(48, Math.min(260, Math.floor(160e6 / bytes)));
@@ -70,7 +74,8 @@ export class ChunkRenderer {
     for (let ty = ty0; ty < ty0 + CHUNK; ty++) for (let tx = tx0; tx < tx0 + CHUNK; tx++) {
       const i = tileIndex(tx, ty);
       let g = w.ground[i];
-      if (g === G_DIRT && w.garbage[i] === 0) g = G_EARTH;
+      // natural soil all heals into the same lush ground once clean
+      if ((g === G_DIRT || g === G_GRAVEL) && w.garbage[i] === 0) g = G_EARTH;
       const tex = this.ground[g];
       const sx = ((tx * TILE) % GROUND_PERIOD) * RS, sy = ((ty * TILE) % GROUND_PERIOD) * RS;
       c.drawImage(tex, sx, sy, TILE * RS, TILE * RS, tx * TILE, ty * TILE, TILE, TILE);
@@ -97,6 +102,14 @@ export class ChunkRenderer {
         if (edge(tx, ty + 1)) c.fillRect(tx * TILE, (ty + 1) * TILE - 3.3, TILE, 0.8);
       }
     }
+    // soft teal glow where junk used to be (margin tiles too, so chunk edges blend)
+    c.globalAlpha = 0.5;
+    for (let ty = ty0 - 1; ty < ty0 + CHUNK + 1; ty++) for (let tx = tx0 - 1; tx < tx0 + CHUNK + 1; tx++) {
+      if (!inWorld(tx, ty)) continue;
+      const i = tileIndex(tx, ty);
+      if (w.garbage[i] === 0 && w.initial[i] > 0 && w.ground[i] !== G_ASPHALT) c.drawImage(this.bloom, (tx + 0.5) * TILE - 28, (ty + 0.5) * TILE - 28, 56, 56);
+    }
+    c.globalAlpha = 1;
     // clean ground details: grass, flowers, stones
     for (let ty = ty0; ty < ty0 + CHUNK; ty++) for (let tx = tx0; tx < tx0 + CHUNK; tx++) {
       const i = tileIndex(tx, ty);
@@ -104,7 +117,6 @@ export class ChunkRenderer {
       const h = hash2(tx, ty, 41);
       // cleaned land blooms: the more junk was here, the more it glows back to life
       const was = w.initial[i] > 0;
-      if (was) { c.fillStyle = 'rgba(94,234,212,0.07)'; c.fillRect(tx * TILE, ty * TILE, TILE, TILE); }
       if (h < (was ? 0.42 : 0.3)) this.grass(c, tx, ty, h);
       else if (h < (was ? 0.5 : 0.33)) this.mushrooms(c, tx, ty, h);
       else if (h > 0.94) this.pebble(c, tx, ty, h);

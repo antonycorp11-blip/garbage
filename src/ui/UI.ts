@@ -820,7 +820,7 @@ export class UI {
     if (!this.mapImg) this.mapImg = this.mapCanvas.getContext('2d')!.createImageData(N, N);
     const d = this.mapImg.data;
     const radar = g.d.radar;
-    const groundCol: Record<number, number[]> = { [G_EARTH]: [150, 118, 78], [G_CONCRETE]: [150, 148, 140], [G_ASPHALT]: [70, 70, 74], [G_GRAVEL]: [130, 118, 98], [G_RUINFLOOR]: [168, 150, 120] };
+    const groundCol: Record<number, number[]> = { [G_EARTH]: [176, 160, 214], [G_CONCRETE]: [150, 170, 196], [G_ASPHALT]: [70, 72, 120], [G_GRAVEL]: [176, 160, 214], [G_RUINFLOOR]: [120, 176, 160] };
     for (let i = 0; i < N * N; i++) {
       const gv = w.garbage[i];
       let r: number, gg: number, b: number;
@@ -828,9 +828,9 @@ export class UI {
       else if (gv > 0) {
         const t = Math.min(1, gv / 80);
         if (radar) { r = 80 + 175 * Math.min(1, t * 1.6); gg = 20 + 200 * Math.max(0, t - 0.45); b = 60 * (1 - t); }
-        else { r = 60 + 50 * t; gg = 46 + 34 * t; b = 32 + 18 * t; }
+        else { r = 92 + 40 * t; gg = 62 + 20 * t; b = 120 + 30 * t; }
       } else {
-        const c = groundCol[w.ground[i]] ?? [150, 118, 78];
+        const c = groundCol[w.ground[i]] ?? [176, 160, 214];
         r = c[0]; gg = c[1]; b = c[2];
       }
       d[i * 4] = r; d[i * 4 + 1] = gg; d[i * 4 + 2] = b; d[i * 4 + 3] = 255;
@@ -864,8 +864,8 @@ export class UI {
     const g = this.game;
     body.innerHTML = `<h2>Mapa</h2><p class="lead">${g.d.radar ? 'Radar ativo: as cores mostram a densidade de sucata restante.' : 'Dica: o Radar de Sucata (árvore de melhorias) mostra a densidade com cores quentes.'} <button class="btn ghost" data-stats style="margin-left:6px">📊 Números</button></p>
       <div class="mapwrap"><canvas width="576" height="576"></canvas><div class="legend">
-      <div><span class="sw" style="background:${g.d.radar ? '#ff3a2a' : '#6e5a40'}"></span>Sucata ${g.d.radar ? '(quanto mais amarelo, mais denso)' : ''}</div>
-      <div><span class="sw" style="background:#96764e"></span>Terreno limpo</div>
+      <div><span class="sw" style="background:${g.d.radar ? '#ff3a2a' : '#7a4f8c'}"></span>Sucata ${g.d.radar ? '(quanto mais amarelo, mais denso)' : ''}</div>
+      <div><span class="sw" style="background:#b0a0d6"></span>Terreno limpo</div>
       <div><span class="sw" style="background:#f0f0f0"></span>Máquinas</div>
       <div><span class="sw" style="background:#38bdf8"></span>Postos</div>
       <div><span class="sw" style="background:#ffd54f"></span>Descobertas</div>

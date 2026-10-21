@@ -9,6 +9,8 @@ type View = { x0: number; y0: number; x1: number; y1: number };
 
 interface Dog { x: number; y: number; tx: number; ty: number; vx: number; state: 'follow' | 'wander' | 'sit' | 'sniff'; t: number; face: number; walk: number; bark: number }
 interface Bird { a: number; r: number; speed: number; h: number; phase: number }
+/** Glubs: the planet's jelly natives. They come back to land that has been cleaned. */
+interface Glub { x: number; y: number; tx: number; ty: number; t: number; hop: number; col: number; face: number; emote: number; s: number }
 interface Cloud { x: number; y: number; s: number }
 
 export const VALDEMAR = { x: (CENTER - 3.4) * TILE, y: (CENTER + 2.7) * TILE };
@@ -17,6 +19,8 @@ export const VALDEMAR = { x: (CENTER - 3.4) * TILE, y: (CENTER + 2.7) * TILE };
 export class Life {
   dog: Dog;
   birds: Bird[] = [];
+  glubs: Glub[] = [];
+  private glubT = 0;
   birdCenter = { x: 0, y: 0 };
   private birdT = 0;
   clouds: Cloud[] = [];
@@ -27,7 +31,7 @@ export class Life {
   constructor(private game: Game, private fx: Effects) {
     const p = game.player;
     this.dog = { x: p.x - 30, y: p.y + 10, tx: p.x, ty: p.y, vx: 0, state: 'wander', t: 2, face: 1, walk: 0, bark: 0 };
-    for (let i = 0; i < 5; i++) this.birds.push({ a: Math.random() * 6.28, r: 60 + Math.random() * 90, speed: 0.25 + Math.random() * 0.2, h: 60 + Math.random() * 50, phase: Math.random() * 6 });
+    for (let i = 0; i < 4; i++) this.birds.push({ a: Math.random() * 6.28, r: 70 + Math.random() * 110, speed: 0.08 + Math.random() * 0.08, h: 70 + Math.random() * 50, phase: Math.random() * 6 });
     for (let i = 0; i < 7; i++) this.clouds.push({ x: Math.random() * WORLD_PX, y: Math.random() * WORLD_PX, s: 0.7 + Math.random() * 0.9 });
     this.cloudSprite = this.makeCloud();
   }
@@ -39,7 +43,7 @@ export class Life {
     for (let i = 0; i < 14; i++) {
       const a = (i / 14) * 6.28, d = 30 + (i % 3) * 22;
       const x = S / 2 + Math.cos(a) * d * 1.3, y = S / 2 + Math.sin(a) * d * 0.7, r = 40 + (i % 4) * 12;
-      c.fillStyle = rad(c, x, y, 0, r, [[0, 'rgba(15,20,40,0.5)'], [1, 'rgba(15,20,40,0)']]);
+      c.fillStyle = rad(c, x, y, 0, r, [[0, 'rgba(40,16,70,0.45)'], [1, 'rgba(40,16,70,0)']]);
       c.beginPath(); c.arc(x, y, r, 0, 6.28); c.fill();
     }
     return cv;
@@ -119,8 +123,65 @@ export class Life {
       if (c.x > WORLD_PX + 300) c.x = -300;
       if (c.y > WORLD_PX + 300) c.y = -300;
     }
+    this.updateGlubs(dt);
     if (this.speech) { this.speech.t -= dt; if (this.speech.t <= 0) this.speech = null; }
     void time;
+  }
+
+  /** Glubs come back to cleaned land: more of them the cleaner the planet. */
+  private updateGlubs(dt: number) {
+    const g = this.game, w = g.world, p = g.player;
+    const pct = 1 - w.remaining / 1_000_000;
+    const want = pct < 0.0015 ? 0 : Math.min(16, 2 + Math.floor(Math.sqrt(pct) * 20));
+    this.glubT -= dt;
+    const freeSpot = (cx: number, cy: number, R: number) => {
+      for (let k = 0; k < 40; k++) {
+        const tx = Math.floor(cx / TILE + (Math.random() - 0.5) * 2 * R), ty = Math.floor(cy / TILE + (Math.random() - 0.5) * 2 * R);
+        if (!inWorld(tx, ty)) continue;
+        const i = tileIndex(tx, ty);
+        if (w.garbage[i] === 0 && w.initial[i] > 0 && w.occupant[i] < 0) return { x: (tx + 0.2 + Math.random() * 0.6) * TILE, y: (ty + 0.3 + Math.random() * 0.5) * TILE };
+      }
+      return null;
+    };
+    if (this.glubs.length < want && this.glubT <= 0) {
+      this.glubT = 1.5;
+      const sp = freeSpot(p.x, p.y, 13);
+      if (sp) this.glubs.push({ x: sp.x, y: sp.y, tx: sp.x, ty: sp.y, t: 1, hop: 0, col: Math.floor(Math.random() * 5), face: 0, emote: 0, s: 1.25 + Math.random() * 0.45 });
+    }
+    if (this.glubs.length > want) this.glubs.length = want;
+    for (let i = 0; i < this.glubs.length; i++) {
+      const gl = this.glubs[i];
+      if (Math.hypot(gl.x - p.x, gl.y - p.y) > 26 * TILE) {
+        const sp = freeSpot(p.x, p.y, 13);
+        if (sp) { gl.x = gl.tx = sp.x; gl.y = gl.ty = sp.y; }
+        continue;
+      }
+      gl.emote = Math.max(0, gl.emote - dt * 0.6);
+      gl.t -= dt;
+      const dpx = gl.x - p.x, dpy = gl.y - p.y, dp = Math.hypot(dpx, dpy);
+      if (dp < 1.6 * TILE && gl.t > 0.3) {
+        // shy: hop away from BIP, then send a heart
+        const sp = { x: gl.x + (dpx / (dp || 1)) * 2.5 * TILE, y: gl.y + (dpy / (dp || 1)) * 2 * TILE };
+        const tx = Math.floor(sp.x / TILE), ty = Math.floor(sp.y / TILE);
+        if (inWorld(tx, ty) && w.garbage[tileIndex(tx, ty)] === 0) { gl.tx = sp.x; gl.ty = sp.y; gl.t = 0.2; if (Math.random() < 0.5) gl.emote = 1.6; }
+      } else if (gl.t <= 0) {
+        gl.t = 1.5 + Math.random() * 3;
+        const sp = freeSpot(gl.x, gl.y, 3);
+        if (sp) { gl.tx = sp.x; gl.ty = sp.y; }
+      }
+      const dx = gl.tx - gl.x, dy = gl.ty - gl.y, l = Math.hypot(dx, dy);
+      if (l > 1) {
+        const step = Math.min(l, 1.8 * TILE * dt);
+        gl.x += (dx / l) * step; gl.y += (dy / l) * step;
+        gl.hop += dt * 11;
+        gl.face = Math.max(-1, Math.min(1, dx / 8));
+      } else {
+        // settle the hop to the ground
+        const ph = gl.hop % Math.PI;
+        if (ph > 0.05) gl.hop += Math.min(dt * 11, Math.PI - ph);
+        gl.face *= 0.9;
+      }
+    }
   }
 
   /** y-sortable objects */
@@ -130,6 +191,7 @@ export class Life {
     const d = this.dog;
     if (inV(d.x, d.y)) out.push({ y: d.y, d: (c) => drawDog(c, d, time) });
     if (inV(VALDEMAR.x, VALDEMAR.y)) out.push({ y: VALDEMAR.y, d: (c) => drawValdemar(c, VALDEMAR.x, VALDEMAR.y, time, this.speech) });
+    for (const gl of this.glubs) if (inV(gl.x, gl.y)) out.push({ y: gl.y, d: (c) => drawGlub(c, gl, time) });
     return out;
   }
 
@@ -145,51 +207,46 @@ export class Life {
       const gv = w.garbage[i];
       const h = hash2(tx, ty, 61);
       if (gv > 30 && h < 0.07) {
-        // fly swarm
+        // glowing spores drifting up from the junk
         const cx = (tx + 0.5) * TILE, cy = (ty + 0.3) * TILE;
         if (cx < view.x0 || cx > view.x1 || cy < view.y0 || cy > view.y1) continue;
-        for (let k = 0; k < 5; k++) {
-          const t = time * (2.2 + k * 0.4) + k * 1.7 + h * 50;
-          const fx = cx + Math.sin(t) * (5 + k * 1.4) + Math.sin(t * 2.7) * 2;
-          const fy = cy + Math.cos(t * 1.3) * (3 + k) - 6 + Math.sin(t * 3.1) * 1.5;
-          c.fillStyle = 'rgba(15,15,15,0.85)'; c.fillRect(fx - 0.6, fy - 0.5, 1.2, 1);
-          c.fillStyle = 'rgba(220,230,255,0.45)'; c.fillRect(fx - 1, fy - 1.2 + (Math.sin(time * 60 + k) > 0 ? 0 : 0.4), 0.8, 0.6); c.fillRect(fx + 0.3, fy - 1.2, 0.8, 0.6);
+        for (let k = 0; k < 4; k++) {
+          const life = (time * (0.25 + k * 0.05) + k * 0.31 + h * 7) % 1;
+          const sx = cx + Math.sin(time * 1.3 + k * 2 + h * 30) * (4 + k * 2);
+          const sy = cy - life * 26;
+          const a = Math.sin(life * Math.PI);
+          const col = k % 2 ? '165,243,252' : '249,168,212';
+          c.fillStyle = `rgba(${col},${0.25 * a})`; c.beginPath(); c.arc(sx, sy, 2.4, 0, 6.28); c.fill();
+          c.fillStyle = `rgba(255,255,255,${0.9 * a})`; c.fillRect(sx - 0.5, sy - 0.5, 1, 1);
         }
       } else if (gv === 0 && h > 0.965 && w.ground[i] !== 3) {
-        // butterfly over clean ground
+        // glow moth over clean ground
         const t = time * 0.6 + h * 40;
         const bx = (tx + 0.5) * TILE + Math.sin(t) * 26 + Math.sin(t * 2.3) * 8;
         const by = (ty + 0.5) * TILE + Math.cos(t * 0.8) * 18 - 10;
         if (bx < view.x0 || bx > view.x1 || by < view.y0 || by > view.y1) continue;
-        const flap = Math.abs(Math.sin(time * 14 + h * 9));
-        const col = ['#fbbf24', '#f472b6', '#60a5fa', '#ffffff'][Math.floor(h * 1000) % 4];
-        c.fillStyle = 'rgba(0,0,0,0.18)'; ellipse(c, bx + 3, by + 14, 2.5, 1); c.fill();
+        const flap = Math.abs(Math.sin(time * 12 + h * 9));
+        const col = ['#67e8f9', '#f9a8d4', '#fde68a', '#c4b5fd'][Math.floor(h * 1000) % 4];
+        c.fillStyle = 'rgba(20,10,40,0.18)'; ellipse(c, bx + 3, by + 14, 2.5, 1); c.fill();
+        c.globalAlpha = 0.35; c.fillStyle = col; c.beginPath(); c.arc(bx, by, 5, 0, 6.28); c.fill(); c.globalAlpha = 1;
         c.fillStyle = col;
-        ellipse(c, bx - 1.6 * flap, by, 1.8 * flap + 0.3, 2.2); c.fill();
-        ellipse(c, bx + 1.6 * flap, by, 1.8 * flap + 0.3, 2.2); c.fill();
-        c.fillStyle = '#222'; c.fillRect(bx - 0.3, by - 1.6, 0.6, 3.2);
+        ellipse(c, bx - 1.8 * flap, by, 1.9 * flap + 0.3, 2.4); c.fill();
+        ellipse(c, bx + 1.8 * flap, by, 1.9 * flap + 0.3, 2.4); c.fill();
+        c.fillStyle = '#fff'; c.fillRect(bx - 0.4, by - 1.6, 0.8, 3.2);
       }
     }
   }
 
   /** Clouds and birds, above everything in the world. */
   drawSky(c: C, view: View, time: number) {
-    // birds + shadows
+    // sky jellies drifting high above, with shadows on the ground
     const bc = this.birdCenter;
     for (const b of this.birds) {
       const x = bc.x + Math.cos(b.a) * b.r, y = bc.y + Math.sin(b.a) * b.r * 0.6;
       if (x < view.x0 - 200 || x > view.x1 + 200 || y < view.y0 - 200 || y > view.y1 + 200) continue;
-      const flap = Math.sin(time * 7 + b.phase);
-      const ang = b.a + Math.PI / 2;
-      // shadow on the ground
-      c.save(); c.translate(x + 30, y + b.h * 0.6); c.rotate(ang); c.fillStyle = 'rgba(0,0,0,0.18)';
-      c.beginPath(); c.moveTo(-9, flap * 1.5); c.quadraticCurveTo(-4, -2, 0, 0); c.quadraticCurveTo(4, -2, 9, flap * 1.5); c.lineTo(0, 2); c.closePath(); c.fill();
-      c.restore();
-      c.save(); c.translate(x, y - b.h); c.rotate(ang);
-      c.fillStyle = '#1b1612';
-      c.beginPath(); c.moveTo(-10, flap * 3); c.quadraticCurveTo(-5, -3 + flap, 0, -0.5); c.quadraticCurveTo(5, -3 + flap, 10, flap * 3); c.quadraticCurveTo(4, 0.8, 0, 2.2); c.quadraticCurveTo(-4, 0.8, -10, flap * 3); c.fill();
-      c.fillStyle = '#b94a3a'; c.beginPath(); c.arc(0, -1.8, 1, 0, 6.28); c.fill();
-      c.restore();
+      const pulse = Math.sin(time * 1.8 + b.phase);
+      c.fillStyle = 'rgba(30,10,60,0.16)'; ellipse(c, x + 30, y + b.h * 0.6, 12, 5); c.fill();
+      drawSkyJelly(c, x, y - b.h, time, b.phase, pulse);
     }
     // cloud shadows
     for (const cl of this.clouds) {
@@ -401,3 +458,89 @@ function wrap(c: C, text: string, max: number): string[] {
 }
 
 export { valueNoise, WORLD_TILES };
+
+// ------------------------------------------------------------------------------------ Glubs & sky jellies
+const GLUB_COLS = ['#5eead4', '#f9a8d4', '#bef264', '#c4b5fd', '#fde68a'];
+
+export function drawGlub(c: C, gl: { x: number; y: number; hop: number; col: number; face: number; emote: number; s: number }, time: number) {
+  const col = GLUB_COLS[gl.col % GLUB_COLS.length];
+  const z = Math.max(0, Math.sin(gl.hop)) * 5;
+  const squash = z > 0.5 ? 0.92 : 1.08 + Math.sin(time * 3 + gl.col) * 0.04;
+  const s = gl.s;
+  c.save();
+  c.translate(gl.x, gl.y);
+  c.scale(s, s);
+  c.fillStyle = 'rgba(20,10,40,0.28)'; ellipse(c, 0, 0.5, 5.5 - z * 0.25, 2); c.fill();
+  c.translate(0, -z);
+  c.scale(1 / squash, squash);
+  // glow
+  c.fillStyle = rad(c, 0, -4, 0, 9, [[0, hexA(col, 0.22)], [1, hexA(col, 0)]]);
+  c.beginPath(); c.arc(0, -4, 9, 0, 6.28); c.fill();
+  // body: jelly drop with a flat-ish bottom
+  const body = () => { c.beginPath(); c.moveTo(-5.2, 0); c.bezierCurveTo(-6, -6, -3, -9.5, 0, -9.5); c.bezierCurveTo(3, -9.5, 6, -6, 5.2, 0); c.quadraticCurveTo(0, 1.4, -5.2, 0); c.closePath(); };
+  body();
+  c.fillStyle = rad(c, -1.5, -6, 0.5, 9, [[0, '#ffffff'], [0.3, col], [1, shadeHex(col, -0.35)]]);
+  c.fill();
+  c.strokeStyle = '#2a1a10'; c.lineWidth = 0.8; c.stroke();
+  // antenna
+  c.strokeStyle = '#2a1a10'; c.lineWidth = 0.7;
+  const wob = Math.sin(time * 5 + gl.col) * 0.8;
+  c.beginPath(); c.moveTo(0.5, -9.3); c.quadraticCurveTo(1 + wob, -12, 2 + wob, -12.6); c.stroke();
+  c.fillStyle = '#fff'; c.beginPath(); c.arc(2 + wob, -12.8, 1.1, 0, 6.28); c.fill(); c.stroke();
+  // face
+  const ex = gl.face * 0.9;
+  const blink = (time * 0.7 + gl.col * 0.37) % 4 < 0.12;
+  c.fillStyle = '#2a1a10';
+  if (blink) { c.fillRect(ex - 2.6, -5.2, 1.6, 0.5); c.fillRect(ex + 1, -5.2, 1.6, 0.5); }
+  else {
+    c.beginPath(); c.ellipse(ex - 1.8, -5.2, 0.9, 1.2, 0, 0, 6.28); c.ellipse(ex + 1.8, -5.2, 0.9, 1.2, 0, 0, 6.28); c.fill();
+    c.fillStyle = '#fff'; c.fillRect(ex - 2.1, -5.9, 0.5, 0.5); c.fillRect(ex + 1.5, -5.9, 0.5, 0.5);
+  }
+  c.fillStyle = 'rgba(244,114,182,0.55)'; ellipse(c, ex - 3.2, -3.6, 1, 0.6); c.fill(); ellipse(c, ex + 3.2, -3.6, 1, 0.6); c.fill();
+  c.strokeStyle = '#2a1a10'; c.lineWidth = 0.5; c.beginPath(); c.arc(ex, -4, 0.9, 0.2, Math.PI - 0.2); c.stroke();
+  // shine
+  c.fillStyle = 'rgba(255,255,255,0.75)'; ellipse(c, -2.6, -7, 1.2, 0.7, -0.6); c.fill();
+  c.restore();
+  if (gl.emote > 0) {
+    // little heart above the head
+    const a = Math.min(1, gl.emote);
+    c.save(); c.globalAlpha = a; c.translate(gl.x, gl.y - 16 * s - z - (1 - a) * 6);
+    c.fillStyle = '#fb7185'; c.strokeStyle = '#2a1a10'; c.lineWidth = 0.6;
+    c.beginPath(); c.moveTo(0, 2); c.bezierCurveTo(-4, -1, -2, -4.5, 0, -2.2); c.bezierCurveTo(2, -4.5, 4, -1, 0, 2); c.fill(); c.stroke();
+    c.restore();
+  }
+}
+
+function drawSkyJelly(c: C, x: number, y: number, time: number, phase: number, pulse: number) {
+  const col = ['#f0abfc', '#a5f3fc', '#fde68a', '#c4b5fd'][Math.floor(phase * 10) % 4];
+  c.save(); c.translate(x, y);
+  c.globalAlpha = 0.85;
+  c.fillStyle = rad(c, 0, -2, 0, 22, [[0, hexA(col, 0.35)], [1, hexA(col, 0)]]);
+  c.beginPath(); c.arc(0, -2, 22, 0, 6.28); c.fill();
+  // tentacles
+  c.strokeStyle = hexA(col, 0.8); c.lineWidth = 1.1; c.lineCap = 'round';
+  for (let k = -2; k <= 2; k++) {
+    c.beginPath(); c.moveTo(k * 3, 2);
+    for (let j = 1; j <= 4; j++) c.lineTo(k * 3 + Math.sin(time * 2 + j + k + phase) * 2, 2 + j * 4 + pulse);
+    c.stroke();
+  }
+  // bell
+  const w = 10 + pulse * 1.2, h = 8 - pulse;
+  c.beginPath(); c.moveTo(-w, 2); c.bezierCurveTo(-w, -h * 1.4, w, -h * 1.4, w, 2); c.quadraticCurveTo(0, 4, -w, 2); c.closePath();
+  c.fillStyle = rad(c, -3, -5, 1, 14, [[0, '#ffffff'], [0.35, hexA(col, 0.95)], [1, hexA(shadeHex(col, -0.3), 0.9)]]);
+  c.fill();
+  c.strokeStyle = '#2a1a10'; c.lineWidth = 1; c.stroke();
+  c.fillStyle = 'rgba(255,255,255,0.6)'; ellipse(c, -4, -4, 2.4, 1.2, -0.4); c.fill();
+  c.restore();
+}
+
+function hexA(hex: string, a: number) {
+  const n = parseInt(hex.slice(1), 16);
+  return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+}
+function shadeHex(hex: string, k: number) {
+  const n = parseInt(hex.slice(1), 16);
+  const f = (v: number) => Math.round(k >= 0 ? v + (255 - v) * k : v * (1 + k));
+  const r = f((n >> 16) & 255), g = f((n >> 8) & 255), b = f(n & 255);
+  return '#' + ((1 << 24) | (r << 16) | (g << 8) | b).toString(16).slice(1);
+}

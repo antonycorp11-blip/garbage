@@ -89,7 +89,7 @@ export class Renderer {
     this.life.update(dt, time);
 
     c.setTransform(1, 0, 0, 1, 0, 0);
-    c.fillStyle = '#2a2118';
+    c.fillStyle = '#1d1430';
     c.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
     // ---- chunks
@@ -197,6 +197,12 @@ export class Renderer {
 
     // ---- screen space post
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    // Nébula-7 day cycle (3 min): a gentle violet dusk and night tint
+    const day = (g.stats.playTime % 180) / 180;
+    const night = Math.max(0, Math.cos((day - 0.75) * Math.PI * 2));
+    const dusk = Math.max(0, 1 - Math.abs(day - 0.5) / 0.12);
+    if (night > 0.01) { c.fillStyle = `rgba(28,18,78,${0.22 * night * night})`; c.fillRect(0, 0, this.W, this.H); }
+    if (dusk > 0.01) { c.fillStyle = `rgba(255,120,160,${0.07 * dusk})`; c.fillRect(0, 0, this.W, this.H); }
     if (!this.vignette) this.vignette = this.makeVignette();
     c.drawImage(this.vignette, 0, 0, this.W, this.H);
     this.drawLocator(time);
@@ -256,11 +262,11 @@ export class Renderer {
     cv.width = Math.max(1, Math.round(this.W / 2)); cv.height = Math.max(1, Math.round(this.H / 2));
     const c = cv.getContext('2d')!;
     const W = cv.width, H = cv.height;
-    c.fillStyle = rad(c, W / 2, H * 0.45, Math.min(W, H) * 0.35, Math.max(W, H) * 0.75, [[0, 'rgba(0,0,0,0)'], [1, 'rgba(10,6,2,0.55)']]);
+    c.fillStyle = rad(c, W / 2, H * 0.45, Math.min(W, H) * 0.35, Math.max(W, H) * 0.75, [[0, 'rgba(0,0,0,0)'], [1, 'rgba(14,6,34,0.55)']]);
     c.fillRect(0, 0, W, H);
     const g2 = c.createLinearGradient(0, 0, 0, H);
-    g2.addColorStop(0, 'rgba(255,200,120,0.07)');
-    g2.addColorStop(1, 'rgba(40,20,80,0.06)');
+    g2.addColorStop(0, 'rgba(255,180,230,0.06)');
+    g2.addColorStop(1, 'rgba(40,200,220,0.05)');
     c.fillStyle = g2; c.fillRect(0, 0, W, H);
     return cv;
   }

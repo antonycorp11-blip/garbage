@@ -6,7 +6,7 @@ import { ctx2d, lin, makeCanvas, rad, rrect, shade } from './paint';
 import { ItemSprites } from './sprites';
 import { TileItem, genTileItems, visibleK } from './tileItems';
 
-const PAL = ['#c9b79a', '#8d7a62', '#ffd27a', '#ffffff', '#f0abfc', '#7dd3fc', '#ffe082', '#a3a3a3', '#86efac', '#fb923c', '#facc15', '#e879f9'];
+const PAL = ['#b8a6da', '#6f5a99', '#ffd27a', '#ffffff', '#f0abfc', '#7dd3fc', '#ffe082', '#a3a3a3', '#86efac', '#fb923c', '#facc15', '#e879f9'];
 const P_DUST = 0, P_SPARK = 1, P_MAGIC = 2, P_COIN = 3, P_BIT = 4, P_SMOKE = 5, P_SUCK = 6;
 
 interface Flyer { spr: number; mat: number; x0: number; y0: number; x1: number; y1: number; t: number; dur: number; arc: number; rot: number; spin: number; active: boolean }
