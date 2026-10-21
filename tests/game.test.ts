@@ -59,8 +59,9 @@ describe('Game', () => {
     g.storage = [1e6, 1e6, 1e6, 1e6, 1e6, 0];
     const tx = CENTER + 30, ty = CENTER;
     clearArea(g, tx, ty, tx, ty);
-    expect(g.build('collector', tx, ty)).toBeNull();
-    const m = g.machines.machines.find((m) => m.type === 'collector')!;
+    g.upgrades.a_arm = 1; g.recompute();
+    expect(g.build('arm', tx, ty)).toBeNull();
+    const m = g.machines.machines.find((m) => m.type === 'arm')!;
     let inRange = 0;
     g.machines.ensureTargets(m);
     for (const t of m.targets!) inRange += g.world.garbage[t];
@@ -261,5 +262,43 @@ describe('Game', () => {
     expect(g2.loadout.move).toBe('treads');
     expect(g2.ownedModules).toContain('hover');
     expect(g2.d.garbageSlow).toBe(0);
+  });
+
+  it('collectors roam inside their zone when their area runs dry', () => {
+    const g = new Game();
+    g.money = 1e9; g.storage = [1e6, 1e6, 1e6, 1e6, 1e6, 0];
+    g.contracts.started = true;
+    const tx = CENTER + 30, ty = CENTER;
+    clearArea(g, tx, ty, tx, ty);
+    expect(g.build('collector', tx, ty)).toBeNull();
+    const m = g.machines.machines.find((m) => m.type === 'collector')!;
+    let moved = false;
+    for (let i = 0; i < 3000; i++) {
+      g.update(0.5, idle); m.buffer.fill(0); m.bufferTotal = 0;
+      if (m.tx !== tx || m.ty !== ty) moved = true;
+      expect(Math.hypot(m.tx - m.anchorX, m.ty - m.anchorY)).toBeLessThanOrEqual(g.roamRadius(m) + 0.01);
+      expect(g.world.occupant[m.ty * WORLD_TILES + m.tx]).toBe(m.id);
+    }
+    expect(moved).toBe(true);
+  });
+
+  it('drones fly loads straight to the depot and hangars can buy more', () => {
+    const g = new Game();
+    g.money = 1e9; g.storage = [1e6, 1e6, 1e6, 1e6, 1e6, 0];
+    g.contracts.started = true;
+    g.upgrades = { a_robots: 1, a_belts: 1, a_arm: 1 };
+    g.autoSell = [false, false, false, false, false, false];
+    g.recompute();
+    const tx = CENTER + 40, ty = CENTER; // far outside the depot circle, no belts
+    clearArea(g, tx, ty, tx, ty);
+    expect(g.build('robots', tx, ty)).toBeNull();
+    const m = g.machines.machines.find((m) => m.type === 'robots')!;
+    const n0 = m.bots.length || 2;
+    expect(g.buyDrone(m)).toBeNull();
+    const st0 = sumMats(g.storage) + sumMats(g.yard);
+    for (let i = 0; i < 600; i++) g.update(0.25, idle);
+    expect(m.bots.length).toBe(n0 + 1);
+    expect(m.bufferTotal).toBe(0);
+    expect(sumMats(g.storage) + sumMats(g.yard)).toBeGreaterThan(st0);
   });
 });

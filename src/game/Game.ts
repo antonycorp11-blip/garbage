@@ -1,4 +1,4 @@
-import { CENTER, CHUNK, CHUNKS, TILE, TOTAL_GARBAGE, WORLD_TILES, inWorld, tileIndex } from '../core/constants';
+import { CENTER, CHUNK, CHUNKS, DX, DY, TILE, TOTAL_GARBAGE, WORLD_TILES, inWorld, tileIndex } from '../core/constants';
 import { clamp } from '../core/rng';
 import { DISCOVERIES } from '../data/discoveries';
 import { BUILD_ORDER, MACHINES, MAX_MACHINE_LEVEL, MachineType, machineUpgradeCost } from '../data/machines';
@@ -16,7 +16,7 @@ import { World } from '../world/World';
 import { DEPOT } from '../world/worldgen';
 import { Derived, computeDerived } from './derived';
 import { FX, NULL_FX } from './fx';
-import { Machine, MachineSystem, centerX, centerY, hubRadius, isHub } from './Machines';
+import { MAX_EXTRA_DRONES, Machine, MachineSystem, centerX, centerY, hubRadius, isHub } from './Machines';
 import { Player } from './Player';
 
 export interface InputState {
@@ -163,6 +163,39 @@ export class Game {
   get avgRate() {
     const h = this.rateHistory;
     return h.length ? h.reduce((a, b) => a + b, 0) / h.length : 0;
+  }
+
+  /** Zone (tiles around where it was built) a collector may roam in. */
+  roamRadius(m: Machine) { return 7 + 2.5 * (m.level - 1); }
+
+  /** Idle collectors drive themselves to the nearest junk in their zone. */
+  private updateRoamers() {
+    for (const m of this.machines.machines) {
+      if (m.type !== 'collector' || m.idleT < 2 || m.outConveyor >= 0 || m.ox || m.oy) continue;
+      m.idleT = 0;
+      const spot = this.roamSpot(m);
+      // nothing left in the zone: look again much later
+      if (!spot) { m.idleT = -12; continue; }
+      this.machines.relocate(m, spot.tx, spot.ty);
+      if (this.isVisible(m.tx * TILE, m.ty * TILE)) this.fx.burst((m.tx + 0.5) * TILE, (m.ty + 0.8) * TILE, 'dust', 8);
+    }
+  }
+
+  roamSpot(m: Machine): { tx: number; ty: number } | null {
+    const R = this.roamRadius(m);
+    const keepService = this.inServiceArea(m.type, m.anchorX, m.anchorY);
+    let best: { tx: number; ty: number } | null = null, bs = Infinity;
+    for (let y = Math.floor(m.anchorY - R); y <= Math.ceil(m.anchorY + R); y++) for (let x = Math.floor(m.anchorX - R); x <= Math.ceil(m.anchorX + R); x++) {
+      if (Math.hypot(x - m.anchorX, y - m.anchorY) > R || (x === m.tx && y === m.ty)) continue;
+      if (this.placeProblem(m.type, x, y)) continue;
+      if (keepService && !this.inServiceArea(m.type, x, y)) continue;
+      const g = this.reachGarbage(m.type, x, y);
+      if (g < 15) continue;
+      // close and juicy
+      const score = Math.hypot(x - m.tx, y - m.ty) - Math.log(1 + g) * 1.5;
+      if (score < bs) { bs = score; best = { tx: x, ty: y }; }
+    }
+    return best;
   }
 
   sectorLeft(k: number) {
@@ -496,34 +529,69 @@ export class Game {
       }
       return -1;
     };
+    // Dijkstra over (tile, heading) with a turn penalty: straight lines with few curves
+    const TURN = 2.5;
+    const best = new Map<number, number>();
+    const from = new Map<number, number>();
+    const heap: [number, number][] = [];
+    const push = (cost: number, st: number) => {
+      heap.push([cost, st]);
+      let i = heap.length - 1;
+      while (i > 0) { const p = (i - 1) >> 1; if (heap[p][0] <= heap[i][0]) break; [heap[p], heap[i]] = [heap[i], heap[p]]; i = p; }
+    };
+    const pop = () => {
+      const top = heap[0], last = heap.pop()!;
+      if (heap.length) {
+        heap[0] = last;
+        let i = 0;
+        for (;;) {
+          const l = i * 2 + 1, r = l + 1;
+          let k = i;
+          if (l < heap.length && heap[l][0] < heap[k][0]) k = l;
+          if (r < heap.length && heap[r][0] < heap[k][0]) k = r;
+          if (k === i) break;
+          [heap[k], heap[i]] = [heap[i], heap[k]]; i = k;
+        }
+      }
+      return top;
+    };
+    // state = tile * 4 + heading (heading = direction we moved to enter the tile)
     for (let i = 0; i < size; i++) {
-      for (const [tx, ty] of [[m.tx + i, m.ty - 1], [m.tx + i, m.ty + size], [m.tx - 1, m.ty + i], [m.tx + size, m.ty + i]]) {
+      const starts: [number, number, number][] = [[m.tx + i, m.ty - 1, 3], [m.tx + i, m.ty + size, 1], [m.tx - 1, m.ty + i, 2], [m.tx + size, m.ty + i, 0]];
+      for (const [tx, ty, h] of starts) {
         if (!this.freeForBelt(tx, ty)) continue;
-        const k = ty * W + tx;
-        if (prev.has(k)) continue;
-        prev.set(k, -1);
-        queue.push(k);
+        const st = (ty * W + tx) * 4 + h;
+        if (best.has(st)) continue;
+        best.set(st, 1);
+        from.set(st, -1);
+        push(1, st);
       }
     }
-    let found = -1;
-    for (let qi = 0; qi < queue.length && qi < 20000; qi++) {
-      const k = queue[qi];
+    let found = -1, expanded = 0;
+    while (heap.length && expanded++ < 60000) {
+      const [cost, st] = pop();
+      if (cost > (best.get(st) ?? Infinity)) continue;
+      const k = st >> 2, h = st & 3;
       const tx = k % W, ty = (k / W) | 0;
       const gd = isGoal(tx, ty);
-      if (gd >= 0) { found = k; goalDir.set(k, gd); break; }
+      if (gd >= 0) { found = st; goalDir.set(k, gd); break; }
       for (let d = 0; d < 4; d++) {
+        if (d === (h + 2) % 4) continue;
         const nx = tx + DXs[d], ny = ty + DYs[d];
-        const nk = ny * W + nx;
-        if (prev.has(nk) || !this.freeForBelt(nx, ny)) continue;
-        if (Math.abs(nx - m.tx) > 70 || Math.abs(ny - m.ty) > 70) continue;
-        prev.set(nk, k);
-        queue.push(nk);
+        if (Math.abs(nx - m.tx) > 70 || Math.abs(ny - m.ty) > 70 || !this.freeForBelt(nx, ny)) continue;
+        const ns = (ny * W + nx) * 4 + d;
+        const nc = cost + 1 + (d === h ? 0 : TURN);
+        if (nc >= (best.get(ns) ?? Infinity)) continue;
+        best.set(ns, nc);
+        from.set(ns, st);
+        push(nc, ns);
       }
     }
     if (found < 0) return null;
     const path: number[] = [];
-    for (let k = found; k !== -1; k = prev.get(k)!) path.push(k);
+    for (let st = found; st !== -1; st = from.get(st)!) path.push(st >> 2);
     path.reverse();
+    void prev; void queue;
     const tiles: [number, number, number][] = path.map((k, i) => {
       const tx = k % W, ty = (k / W) | 0;
       let dir: number;
@@ -536,6 +604,27 @@ export class Game {
     });
     const unit = this.machineCost('conveyor');
     return { tiles, cost: { money: unit.money * tiles.length, mats: unit.mats.map((v) => v * tiles.length) } };
+  }
+
+  /** Points a belt at an adjacent hub or belt line when its front leads nowhere (end of a drawn line). */
+  autoTurnBelt(b: Machine) {
+    if (b.type !== 'conveyor') return;
+    const ahead = this.machines.at(b.tx + DX[b.dir], b.ty + DY[b.dir]);
+    if (ahead && (isHub(ahead.type) || ((ahead.type === 'conveyor' || ahead.type === 'separator') && (ahead.dir + 2) % 4 !== b.dir))) return;
+    let pick = -1, rank = 0;
+    for (let d = 0; d < 4; d++) {
+      const o = this.machines.at(b.tx + DX[d], b.ty + DY[d]);
+      if (!o || o.id === b.id) continue;
+      let r = 0;
+      if (isHub(o.type)) r = 3;
+      else if ((o.type === 'conveyor' || o.type === 'separator') && (o.dir + 2) % 4 !== d) {
+        // never point back into the belt that feeds us
+        if (o.tx + DX[o.dir] === b.tx && o.ty + DY[o.dir] === b.ty) continue;
+        r = o.linked ? 2 : 1;
+      }
+      if (r > rank) { rank = r; pick = d; }
+    }
+    if (pick >= 0 && pick !== b.dir) { b.dir = pick; this.machines.linksDirty = true; }
   }
 
   connectToDepot(m: Machine): string | null {
@@ -641,7 +730,7 @@ export class Game {
   }
 
   /** Picks a machine up to move it elsewhere (its load goes to the depot). */
-  pickUp(m: Machine): { type: MachineType; level: number; dir: number; tx: number; ty: number } | null {
+  pickUp(m: Machine): { type: MachineType; level: number; dir: number; tx: number; ty: number; extra: number } | null {
     if (!MACHINES[m.type].buildable) return null;
     if (m.bufferTotal > 0) this.deliver(m.buffer.slice(), 0, -1, -1, true);
     for (const pk of m.belt) { const mats = emptyMats(); mats[pk.mat] = pk.units; this.deliver(mats, 0, -1, -1, true); }
@@ -649,14 +738,15 @@ export class Game {
     this.machines.remove(m);
     this.fx.burst(centerX(m) * TILE, centerY(m) * TILE, 'dust', 10);
     this.fx.sound('click');
-    return { type: m.type, level: m.level, dir: m.dir, tx: m.tx, ty: m.ty };
+    return { type: m.type, level: m.level, dir: m.dir, tx: m.tx, ty: m.ty, extra: m.extra };
   }
 
   /** Places a picked-up machine again, free of charge. */
-  placeMoved(type: MachineType, tx: number, ty: number, level: number, dir: number, force = false): string | null {
+  placeMoved(type: MachineType, tx: number, ty: number, level: number, dir: number, force = false, extra = 0): string | null {
     const p = force ? null : this.placeProblem(type, tx, ty);
     if (p) return p;
     const m = this.machines.create(type, tx, ty, dir, level);
+    m.extra = extra;
     m.built = 0;
     const s = MACHINES[type].size;
     this.fx.burst((tx + s / 2) * TILE, (ty + s / 2) * TILE, 'build', 12);
@@ -707,6 +797,20 @@ export class Game {
   toolCost(tier: number) {
     const t = TOOLS[tier];
     return Math.ceil(t.cost * (t.id === 'advanced' && this.flags.alien ? 0.4 : 1));
+  }
+
+  droneCost(m: Machine) { return Math.round(1800 * Math.pow(1.6, m.extra) * this.d.costMult); }
+
+  buyDrone(m: Machine): string | null {
+    if (m.type !== 'robots') return 'Só hangares têm drones';
+    if (m.extra >= MAX_EXTRA_DRONES) return 'Este hangar está lotado';
+    const c = this.droneCost(m);
+    if (this.money < c) { this.fx.sound('error'); return 'Dinheiro insuficiente'; }
+    this.money -= c;
+    m.extra++;
+    this.fx.sound('buy');
+    this.fx.burst(centerX(m) * TILE, centerY(m) * TILE, 'unlock', 14);
+    return null;
   }
 
   // ------------------------------------------------------------------ modules
@@ -873,6 +977,7 @@ export class Game {
     this.updateMeta(dt);
     this.updateContracts(dt);
     this.updateSectors(dt);
+    this.updateRoamers();
     this.updateTeleport(dt);
   }
 

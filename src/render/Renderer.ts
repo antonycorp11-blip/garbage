@@ -224,7 +224,7 @@ export class Renderer {
       c.fillRect(x * TILE + 1, y * TILE + 1, TILE - 2, TILE - 2);
     }
     if (!this.ghost || this.ghost.type !== b.type) {
-      this.ghost = { id: -1, type: b.type, tx: b.tx, ty: b.ty, dir: b.dir, level: 1, buffer: [0, 0, 0, 0, 0, 0], bufferTotal: 0, work: 0, cursor: 0, collected: 0, belt: [], bots: [], status: 'working', targets: null, targetsRadius: 0, anim: 0, lastTarget: -1, outConveyor: -1, inService: false, linked: true, deliverT: 0, built: 1 };
+      this.ghost = { id: -1, type: b.type, tx: b.tx, ty: b.ty, dir: b.dir, level: 1, buffer: [0, 0, 0, 0, 0, 0], bufferTotal: 0, work: 0, cursor: 0, collected: 0, belt: [], bots: [], status: 'working', targets: null, targetsRadius: 0, anim: 0, lastTarget: -1, outConveyor: -1, inService: false, linked: true, deliverT: 0, built: 1, extra: 0, ox: 0, oy: 0, anchorX: 0, anchorY: 0, idleT: 0 };
     }
     const m = this.ghost;
     m.tx = b.tx; m.ty = b.ty; m.dir = b.dir;

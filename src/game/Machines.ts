@@ -29,6 +29,8 @@ export interface Machine {
   belt: Packet[];
   bots: Bot[];
   status: MachineStatus;
+  /** drones bought for this hangar */
+  extra: number;
   // runtime only
   targets: Int32Array | null;
   targetsRadius: number;
@@ -39,6 +41,13 @@ export interface Machine {
   linked: boolean;
   deliverT: number;
   built: number;
+  /** render offset (tiles) while a collector drives to a new spot */
+  ox: number;
+  oy: number;
+  /** where a roaming collector was built: it stays around here */
+  anchorX: number;
+  anchorY: number;
+  idleT: number;
 }
 
 export interface MachineHost {
@@ -56,7 +65,7 @@ export interface MachineHost {
 const SPACING = 0.34;
 const PACKET_UNITS = 10;
 const SERVICE_RATE = 40;
-const BOT_CAPACITY = 30;
+const BOT_CAPACITY = 24;
 const BOT_SPEED = 2.6;
 const EXC_SPEED = 2.1;
 const EXC_CAPACITY = 1500;
@@ -71,10 +80,12 @@ export function machineRadius(m: Machine, d: Derived): number {
 export function machineBufferCap(m: Machine, d: Derived): number {
   return Math.round(MACHINES[m.type].buffer * (1 + 0.3 * (m.level - 1)) * d.bufferMult);
 }
+/** drones a hangar can buy on top of its own */
+export const MAX_EXTRA_DRONES = 4;
 export function botCount(m: Machine, d: Derived): number {
   if (m.type === 'excavator') return 1;
   if (m.type !== 'robots') return 0;
-  return 2 + (m.level - 1) + d.extraRobots;
+  return 2 + (m.level - 1) + d.extraRobots + m.extra;
 }
 export function botCapacity(m: Machine, d: Derived): number {
   return Math.round((m.type === 'excavator' ? EXC_CAPACITY : BOT_CAPACITY) * (1 + 0.3 * (m.level - 1)) * d.bufferMult);
@@ -82,7 +93,7 @@ export function botCapacity(m: Machine, d: Derived): number {
 export function hubRadius(m: Machine, d: Derived): number {
   return MACHINES[m.type].radius + d.serviceBonus;
 }
-export const isHub = (t: MachineType) => t === 'depot' || t === 'recycler';
+export const isHub = (t: MachineType) => t === 'depot' || t === 'recycler' || t === 'beacon';
 export const isBelt = (t: MachineType) => t === 'conveyor' || t === 'separator';
 export const centerX = (m: Machine) => m.tx + MACHINES[m.type].size / 2;
 export const centerY = (m: Machine) => m.ty + MACHINES[m.type].size / 2;
@@ -105,7 +116,8 @@ export class MachineSystem {
     const m: Machine = {
       id: id ?? this.nextId++, type, tx, ty, dir, level, buffer: emptyMats(), bufferTotal: 0, work: 0, cursor: 0, collected: 0,
       belt: [], bots: [], status: 'idle', targets: null, targetsRadius: 0, anim: Math.random() * 10, lastTarget: -1,
-      outConveyor: -1, inService: false, linked: false, deliverT: 0, built: 0,
+      outConveyor: -1, inService: false, linked: false, deliverT: 0, built: 0, extra: 0,
+      ox: 0, oy: 0, anchorX: tx, anchorY: ty, idleT: 0,
     };
     if (id !== undefined) this.nextId = Math.max(this.nextId, id + 1);
     const size = MACHINES[type].size;
@@ -124,6 +136,19 @@ export class MachineSystem {
     this.byId.delete(m.id);
     this.linksDirty = true;
     this.host.onMachineRemoved(m.id);
+  }
+
+  /** Moves a machine to another free spot (the drawing slides over). */
+  relocate(m: Machine, tx: number, ty: number) {
+    const size = MACHINES[m.type].size;
+    const w = this.host.world;
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) w.occupant[tileIndex(m.tx + x, m.ty + y)] = -1;
+    m.ox += m.tx - tx; m.oy += m.ty - ty;
+    m.tx = tx; m.ty = ty;
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) w.occupant[tileIndex(tx + x, ty + y)] = m.id;
+    m.targets = null;
+    m.idleT = 0;
+    this.linksDirty = true;
   }
 
   at(tx: number, ty: number): Machine | undefined {
@@ -257,8 +282,13 @@ export class MachineSystem {
       const m = this.machines[i];
       m.anim += dt;
       m.built = Math.min(1, m.built + dt * 1.5);
+      if (m.ox || m.oy) {
+        // driving to a new spot: the drawing catches up with the real position
+        const l = Math.hypot(m.ox, m.oy), step = 2.6 * dt;
+        if (l <= step) { m.ox = 0; m.oy = 0; } else { m.ox -= (m.ox / l) * step; m.oy -= (m.oy / l) * step; }
+      }
       switch (m.type) {
-        case 'collector': case 'arm': case 'ancient': this.updateStatic(m, dt, d); break;
+        case 'collector': case 'arm': case 'ancient': this.updateStatic(m, dt, d); m.idleT = m.status === 'idle' ? m.idleT + dt : 0; break;
         case 'crusher': m.status = this.host.yardBusy() ? 'working' : 'idle'; break;
         case 'robots': case 'excavator': this.updateBots(m, dt, d); break;
         case 'conveyor': case 'separator': this.updateBelt(m, dt, d); break;
@@ -348,6 +378,24 @@ export class MachineSystem {
           if (nt >= 0) { b.target = nt; this.reserved.add(nt); b.state = BOT_GO; }
           else b.state = b.carryTotal > 0 ? BOT_RETURN : BOT_IDLE;
         }
+      } else if (b.state === BOT_RETURN && m.type === 'robots') {
+        // drones fly their load straight to the nearest hub: no belts needed
+        const hub = this.nearestHub(b.x, b.y);
+        if (!hub) { anyWork = true; continue; }
+        if (this.moveBot(b, centerX(hub), centerY(hub) - 0.3, speed * dt)) {
+          const space = this.host.yardSpace();
+          if (space <= 0) { m.status = 'full'; continue; }
+          const frac = Math.min(1, space / b.carryTotal);
+          const out = emptyMats();
+          let moved = 0;
+          for (let k = 0; k < MAT_COUNT; k++) {
+            const v = frac >= 1 ? b.carry[k] : Math.floor(b.carry[k] * frac);
+            out[k] = v; b.carry[k] -= v; moved += v;
+          }
+          if (moved > 0) this.host.deliver(out, 0, b.x * TILE, b.y * TILE);
+          b.carryTotal -= moved;
+          if (b.carryTotal <= 0) { b.carryTotal = 0; b.carry.fill(0); b.state = BOT_IDLE; }
+        } else anyWork = true;
       } else if (b.state === BOT_RETURN) {
         if (this.moveBot(b, sx, sy, speed * dt)) {
           const space = bufCap - m.bufferTotal;
@@ -364,7 +412,8 @@ export class MachineSystem {
         } else anyWork = true;
       }
     }
-    m.status = m.bufferTotal >= bufCap ? 'full' : anyWork ? 'working' : 'idle';
+    if (m.type === 'robots') { if (m.status !== 'full' || this.host.yardSpace() > 0) m.status = anyWork ? 'working' : 'idle'; }
+    else m.status = m.bufferTotal >= bufCap ? 'full' : anyWork ? 'working' : 'idle';
   }
 
   private scoopTiles(center: number): number[] {

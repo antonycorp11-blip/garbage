@@ -216,9 +216,9 @@ export class SkillTree {
     this.view.s = Math.max(0.3, Math.min(1.1, Math.min(aw / (x1 - x0), avail / (y1 - y0))));
     this.view.x = aw / 2 - ((x0 + x1) / 2) * this.view.s;
     this.view.y = avail / 2 - ((y0 + y1) / 2) * this.view.s + 6;
-    if (this.view.s < 0.62 && !this.fittedOnce) {
+    if (this.view.s < 0.85 && !this.fittedOnce) {
       // first open: readable zoom centered near the root, the player can pan/zoom out
-      this.view.s = 0.62;
+      this.view.s = 0.85;
       this.view.x = aw / 2;
       this.view.y = avail / 2 + 60;
     }
@@ -248,6 +248,8 @@ export class SkillTree {
     const el = this.svgEl;
     el.addEventListener('wheel', (e) => { e.preventDefault(); const r = el.getBoundingClientRect(); this.zoomAt(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.clientX - r.left, e.clientY - r.top); }, { passive: false });
     el.addEventListener('pointerdown', (e) => {
+      // a new first finger means any tracked pointer is stale (its "up" happened elsewhere)
+      if (e.isPrimary) { this.pointers.clear(); this.pinch = 0; }
       try { el.setPointerCapture(e.pointerId); } catch { /* noop */ }
       this.pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       this.dragMoved = 0;
@@ -287,6 +289,11 @@ export class SkillTree {
     };
     el.addEventListener('pointerup', up);
     el.addEventListener('pointercancel', up);
+    // fingers released outside the tree (e.g. over the detail card) must not linger as a fake pinch
+    const drop = (e: PointerEvent) => { if (this.pointers.delete(e.pointerId) && this.pointers.size < 2) this.pinch = 0; };
+    window.addEventListener('pointerup', drop);
+    window.addEventListener('pointercancel', drop);
+    el.addEventListener('lostpointercapture', drop);
   }
 
   private buy(id: string) {

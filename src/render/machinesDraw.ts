@@ -8,6 +8,7 @@ import {
   levelPips, pipe, rivet, rivetRow, shell, stencil, vent,
 } from './detail';
 import { Effects } from './Effects';
+import { drawMatIcon } from './matIcons';
 import { ellipse, groundShadow, lin, poly, rad, rrect, shade } from './paint';
 
 type C = CanvasRenderingContext2D;
@@ -91,31 +92,121 @@ const sepGate = () => cachedLayer('sep3-gate', -18, -30, 36, 48, (c) => {
   rrect(c, -14, -27, 28, 4.6, 2.3); c.fillStyle = SCI.violetD; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.8; c.stroke();
 });
 
+/** Curved belt bed: quarter ring around the corner (H, H), fed from local +y, leaving toward +x. */
+const beltCurve = () => cachedLayer('belt3-curve', -16, -16, 34, 34, (c) => {
+  const H = 16;
+  const ring = (r0: number, r1: number) => { c.beginPath(); c.arc(H, H, r1, Math.PI, Math.PI * 1.5); c.arc(H, H, r0, Math.PI * 1.5, Math.PI, true); c.closePath(); };
+  // shadow + bed
+  c.save(); c.translate(1.5, 2); ring(H - 9, H + 9); c.fillStyle = 'rgba(20,10,30,0.3)'; c.fill(); c.restore();
+  ring(H - 10, H + 10); c.fillStyle = '#231d36'; c.fill();
+  ring(H - 8, H + 8); c.fillStyle = '#2d2645'; c.fill();
+  // cream rails with teal stripe (inner and outer)
+  for (const [r0, r1] of [[H - 14, H - 9], [H + 9, H + 14]]) {
+    ring(r0, r1); c.fillStyle = SCI.shell; c.fill();
+    ring(r0, r0 + 2); c.fillStyle = shade(SCI.shell, -0.18); c.fill();
+    ring(r0 + 2.6, r0 + 3.8); c.fillStyle = SCI.teal; c.fill();
+    ring(r0, r1); c.strokeStyle = INK; c.lineWidth = 0.9; c.stroke();
+  }
+  // studs along both rails
+  c.fillStyle = SCI.violet;
+  for (let i = 0; i <= 4; i++) {
+    const a = Math.PI + (i / 4) * Math.PI / 2;
+    for (const r of [H - 11.5, H + 11.5]) { c.beginPath(); c.arc(H + Math.cos(a) * r, H + Math.sin(a) * r, 0.8, 0, 6.28); c.fill(); }
+  }
+});
+
+/** Merge ramp drawn on the +y rail of a straight belt when something feeds it from that side. */
+const beltRamp = () => cachedLayer('belt3-ramp', -10, 0, 20, 17, (c) => {
+  const H = 16;
+  // opening in the rail: a short ramp tongue sliding into the bed
+  poly(c, [-7, H, 7, H, 5.5, H - 9, -5.5, H - 9]); c.fillStyle = '#2d2645'; c.fill();
+  poly(c, [-7, H, 7, H, 5.5, H - 9, -5.5, H - 9]); c.strokeStyle = INK; c.lineWidth = 0.8; c.stroke();
+  for (const sx of [-1, 1]) { rrect(c, sx * 7 - 1.6, H - 9, 3.2, 9, 1.4); c.fillStyle = SCI.orange; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.7; c.stroke(); }
+});
+
+/** World direction (0..3) from which this belt receives items, as local sides relative to its own dir. */
+function beltFeeds(m: Machine, g: Game): number {
+  // bit 1: local +y side, bit 2: behind, bit 3: local -y side
+  let mask = 0;
+  const ms = g.machines;
+  for (let s = 0; s < 4; s++) {
+    if (s === m.dir) continue;
+    const nx = m.tx + DX[s], ny = m.ty + DY[s];
+    const n = ms.at(nx, ny);
+    if (!n || n.id === m.id) continue;
+    let feeds = false;
+    if (n.type === 'conveyor' || n.type === 'separator') feeds = nx + DX[n.dir] === m.tx && ny + DY[n.dir] === m.ty;
+    else feeds = n.outConveyor === m.id;
+    if (feeds) mask |= 1 << ((s - m.dir + 4) % 4);
+  }
+  return mask;
+}
+
+/** Where a packet at progress t sits on this belt (world px) and which way it faces (radians). */
+function beltPoint(m: Machine, curve: number, t: number): [number, number, number] {
+  const H = TILE / 2;
+  let lx: number, ly: number, la: number;
+  if (curve) {
+    // quarter circle around (H, H*curve): from the side edge (0, H*curve) to the front edge (H, 0)
+    const a = Math.PI + t * Math.PI / 2;
+    lx = H + Math.cos(a) * H; ly = H + Math.sin(a) * H;
+    la = a + Math.PI / 2;
+    if (curve < 0) { ly = -ly; la = -la; }
+  } else { lx = (t - 0.5) * TILE; ly = 0; la = 0; }
+  const ang = (m.dir * Math.PI) / 2, co = Math.cos(ang), si = Math.sin(ang);
+  return [m.tx * TILE + H + lx * co - ly * si, m.ty * TILE + H + lx * si + ly * co, la + ang];
+}
+
+function chevron(c: C, col: string) {
+  c.fillStyle = shade(col, 0, 0.28);
+  c.beginPath(); c.moveTo(-5, -6); c.lineTo(3, 0); c.lineTo(-5, 6); c.lineTo(-2, 0); c.closePath(); c.fill();
+  c.fillStyle = shade(col, 0.3, 0.9);
+  c.beginPath(); c.moveTo(-3.5, -4); c.lineTo(1.5, 0); c.lineTo(-3.5, 4); c.lineTo(-1.5, 0); c.closePath(); c.fill();
+}
+
 export function drawBelt(c: C, m: Machine, g: Game, time: number) {
   const x = m.tx * TILE, y = m.ty * TILE;
   const cx = x + TILE / 2, cy = y + TILE / 2;
+  const H = TILE / 2;
+  const feeds = m.type === 'conveyor' ? beltFeeds(m, g) : 0;
+  const side = feeds & 0b1010;
+  // a single side feed (nothing from behind) bends the belt into a curve
+  const curve = !(feeds & 0b100) && (side === 0b10 ? 1 : side === 0b1000 ? -1 : 0);
+  const col = m.linked ? SCI.cyan : '#ff6b6b';
+  const speed = g.d.beltSpeed * TILE;
   c.save();
   c.translate(cx, cy);
   c.rotate((m.dir * Math.PI) / 2);
-  blit(c, beltFrame(), 0, 0);
-  const H = TILE / 2;
-  const speed = g.d.beltSpeed * TILE;
-  c.save();
-  c.beginPath(); c.rect(-H, -H + 8, TILE, 16); c.clip();
-  const off = (time * speed) % 6;
-  c.fillStyle = '#3a3258';
-  for (let i = -H - 6; i < H + 6; i += 6) c.fillRect(i + off, -H + 8, 1.6, 16);
-  // glowing chevrons (cyan when connected, red when the line goes nowhere)
-  const col = m.linked ? SCI.cyan : '#ff6b6b';
-  c.globalCompositeOperation = 'lighter';
-  for (let i = -H - 16; i < H + 16; i += 16) {
-    const px = i + ((time * speed) % 16);
-    c.fillStyle = shade(col, 0, 0.28);
-    c.beginPath(); c.moveTo(px - 5, -6); c.lineTo(px + 3, 0); c.lineTo(px - 5, 6); c.lineTo(px - 2, 0); c.closePath(); c.fill();
-    c.fillStyle = shade(col, 0.3, 0.9);
-    c.beginPath(); c.moveTo(px - 3.5, -4); c.lineTo(px + 1.5, 0); c.lineTo(px - 3.5, 4); c.lineTo(px - 1.5, 0); c.closePath(); c.fill();
+  if (curve) {
+    if (curve < 0) c.scale(1, -1);
+    blit(c, beltCurve(), 0, 0);
+    // chevrons follow the arc
+    c.save();
+    c.beginPath(); c.arc(H, H, H + 8, Math.PI, Math.PI * 1.5); c.arc(H, H, H - 8, Math.PI * 1.5, Math.PI, true); c.closePath(); c.clip();
+    c.globalCompositeOperation = 'lighter';
+    const arcLen = (Math.PI / 2) * H;
+    const ph = (time * speed) % 12;
+    for (let s0 = -12; s0 < arcLen + 12; s0 += 12) {
+      const a = Math.PI + ((s0 + ph) / arcLen) * (Math.PI / 2);
+      c.save(); c.translate(H + Math.cos(a) * H, H + Math.sin(a) * H); c.rotate(a + Math.PI / 2); chevron(c, col); c.restore();
+    }
+    c.restore();
+  } else {
+    blit(c, beltFrame(), 0, 0);
+    c.save();
+    c.beginPath(); c.rect(-H, -H + 8, TILE, 16); c.clip();
+    const off = (time * speed) % 6;
+    c.fillStyle = '#3a3258';
+    for (let i = -H - 6; i < H + 6; i += 6) c.fillRect(i + off, -H + 8, 1.6, 16);
+    c.globalCompositeOperation = 'lighter';
+    for (let i = -H - 16; i < H + 16; i += 16) { c.save(); c.translate(i + ((time * speed) % 16), 0); chevron(c, col); c.restore(); }
+    c.restore();
+    // side feeds on a straight run (T-junction) get a merge ramp
+    if (m.type === 'conveyor' && (feeds & 0b100 || side === 0b1010)) {
+      if (feeds & 0b10) blit(c, beltRamp(), 0, 0);
+      if (feeds & 0b1000) { c.save(); c.scale(1, -1); blit(c, beltRamp(), 0, 0); c.restore(); }
+    }
   }
-  c.restore();
   if (m.type === 'separator') {
     // gate is drawn upright so its 3/4 perspective stays correct
     c.rotate(-(m.dir * Math.PI) / 2);
@@ -131,25 +222,25 @@ export function drawBelt(c: C, m: Machine, g: Game, time: number) {
   }
   c.restore();
   for (const p of m.belt) {
-    const t = p.t - 0.5;
-    const px = cx + DX[m.dir] * t * TILE, py = cy + DY[m.dir] * t * TILE;
+    const [px, py] = beltPoint(m, curve || 0, p.t);
     drawPacket(c, px, py, p.mat, p.sorted, time);
   }
 }
 
 function drawPacket(c: C, px: number, py: number, mat: number, sorted: boolean, time: number) {
   const col = matCol(mat);
-  c.fillStyle = 'rgba(20,10,30,0.35)'; ellipse(c, px + 0.8, py + 3, 4.8, 1.8); c.fill();
+  c.fillStyle = 'rgba(20,10,30,0.35)'; ellipse(c, px + 0.8, py + 3, 5, 1.8); c.fill();
   if (sorted) {
-    // sorted cargo travels in a clean capsule with a colored band
-    rrect(c, px - 5, py - 6.5, 10, 8.5, 3); c.fillStyle = SCI.shell; c.fill();
-    c.fillStyle = col; c.fillRect(px - 5, py - 3.6, 10, 2.6);
-    rrect(c, px - 5, py - 6.5, 10, 8.5, 3); c.strokeStyle = INK; c.lineWidth = 0.8; c.stroke();
-    glow(c, px, py - 2, 6, col, 0.25 + Math.sin(time * 6 + px) * 0.08);
+    // sorted cargo rides in a clean capsule with the material's icon
+    rrect(c, px - 6, py - 8, 12, 10.5, 3.4); c.fillStyle = SCI.shell; c.fill();
+    c.fillStyle = col; c.fillRect(px - 6, py - 0.8, 12, 2.2);
+    rrect(c, px - 6, py - 8, 12, 10.5, 3.4); c.strokeStyle = INK; c.lineWidth = 0.8; c.stroke();
+    drawMatIcon(c, mat, px, py - 3.6, 8.5);
+    glow(c, px, py - 3, 7, col, 0.22 + Math.sin(time * 6 + px) * 0.08);
   } else {
-    gem(c, px - 1.6, py - 1.6, 3.2, col, 0.3);
-    gem(c, px + 2.2, py - 0.4, 2.4, shade(col, -0.1), -0.5);
-    gem(c, px + 0.4, py - 4.2, 2.2, shade(col, 0.15), 0.9);
+    // loose material: its icon on a little tray
+    ellipse(c, px, py + 1.2, 5.6, 2.4); c.fillStyle = SCI.violetD; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.6; c.stroke();
+    drawMatIcon(c, mat, px, py - 2.6, 10);
   }
 }
 
@@ -159,7 +250,8 @@ function drawPacket(c: C, px: number, py: number, mat: number, sorted: boolean, 
 export function drawMachine(c: C, m: Machine, g: Game, time: number, fx: Effects, onScreen: boolean) {
   const def = MACHINES[m.type];
   const s = def.size * TILE;
-  const x = m.tx * TILE, y = m.ty * TILE;
+  // a roaming collector glides from its old spot (offset decays to 0 as it drives)
+  const x = (m.tx + (m.ox || 0)) * TILE, y = (m.ty + (m.oy || 0)) * TILE;
   const cx = x + s / 2;
   const working = m.status === 'working';
   c.save();
@@ -178,6 +270,7 @@ export function drawMachine(c: C, m: Machine, g: Game, time: number, fx: Effects
     case 'robots': drawStation(c, m, x, y, time); break;
     case 'excavator': drawGarage(c, m, x, y, time); break;
     case 'recycler': drawRecycler(c, x, y, time, fx, onScreen, g); break;
+    case 'beacon': drawBeacon(c, m, x, y, time, g, fx, onScreen); break;
     case 'ancient': drawAncient(c, m, x, y, time, working, fx, onScreen); break;
     default: break;
   }
@@ -186,7 +279,7 @@ export function drawMachine(c: C, m: Machine, g: Game, time: number, fx: Effects
     const cap = machineBufferCap(m, g.d);
     if (m.bufferTotal > 0 || m.status === 'full') bufferBar(c, x + 4, y + s + 2, s - 8, m.bufferTotal / cap);
   }
-  if (m.type !== 'depot' && m.type !== 'recycler') statusBubble(c, m, x + s - 3, y - (s > 32 ? 34 : 26), time);
+  if (m.type !== 'depot' && m.type !== 'recycler' && m.type !== 'beacon') statusBubble(c, m, x + s - 3, y - (s > 32 ? 34 : 26), time);
 }
 
 // =====================================================================================================
@@ -194,11 +287,13 @@ export function drawMachine(c: C, m: Machine, g: Game, time: number, fx: Effects
 // =====================================================================================================
 function collectorBase(level: number) {
   return cachedLayer(`col3-${level}`, -10, -44, 52, 82, (c) => {
-    groundShadow(c, 16, 28, 18, 6.5, 0.4);
-    hexFoot(c, 16, 24, 15);
+    // deck plate riding on the treads (treads themselves are drawn live so they can roll)
+    rrect(c, 3, 15, 26, 13, 4); c.fillStyle = SCI.violetD; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+    rrect(c, 3, 13, 26, 12, 4); c.fillStyle = SCI.violet; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+    c.fillStyle = SCI.teal; c.fillRect(5, 22, 22, 1.2);
     // flexible hose curling to the ground
-    pipe(c, [26, 8, 33, 13, 33, 24, 29, 28], 3, SCI.violet);
-    c.fillStyle = SCI.violetD; ellipse(c, 29, 28.2, 3, 1.2); c.fill();
+    pipe(c, [26, 8, 33, 12, 33, 20, 31, 24], 3, SCI.violet);
+    c.fillStyle = SCI.violetD; ellipse(c, 31, 24.4, 3, 1.2); c.fill();
     // cream body (capsule)
     shell(c, 4, -12, 24, 36, SCI.shell, 9);
     // orange collar + teal band
@@ -216,8 +311,26 @@ function collectorBase(level: number) {
   });
 }
 
+/** Two little tank treads under the collector; lugs roll while it drives. */
+function collectorTreads(c: C, x: number, y: number, roll: number) {
+  for (const tx of [x - 1, x + 25]) {
+    rrect(c, tx, y + 14, 8, 17, 3.5); c.fillStyle = '#231d36'; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+    c.save(); rrect(c, tx + 1, y + 15, 6, 15, 3); c.clip();
+    c.fillStyle = '#4b416e';
+    const off = ((roll % 3.4) + 3.4) % 3.4;
+    for (let ly = y + 13 + off; ly < y + 32; ly += 3.4) c.fillRect(tx + 1, ly, 6, 1.5);
+    c.restore();
+    // drive wheels peeking out front/back
+    for (const wy of [y + 17.5, y + 27.5]) { c.beginPath(); c.arc(tx + 4, wy, 1.8, 0, 6.28); c.fillStyle = SCI.orange; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.6; c.stroke(); }
+  }
+}
+
 function drawCollector(c: C, m: Machine, x: number, y: number, time: number, working: boolean, fx: Effects, onScreen: boolean, g: Game) {
-  const bob = working ? Math.sin(time * 20) * 0.25 : 0;
+  const moving = Math.abs(m.ox || 0) + Math.abs(m.oy || 0) > 0.01;
+  const bob = moving ? Math.sin(time * 26) * 0.6 : working ? Math.sin(time * 20) * 0.25 : 0;
+  groundShadow(c, x + 16, y + 30, 18, 5.5, 0.4);
+  collectorTreads(c, x, y, moving ? time * 30 : 0);
+  if (moving && onScreen && Math.random() < 0.35) fx.burst(x + 16 + (Math.random() - 0.5) * 26, y + 30, 'dust', 1);
   blit(c, collectorBase(m.level), x, y + bob);
   const cx = x + 16, cy = y - 15 + bob;
   // spinning turbine inside the intake
@@ -451,6 +564,12 @@ function drawStation(c: C, m: Machine, x: number, y: number, time: number) {
     lamp(c, x + 16 + Math.cos(a) * 13.6, y + 20 + Math.sin(a) * 6.6, SCI.cyan, Math.floor(time * 8) % 8 === i, 0.7);
   }
   lamp(c, x + 27.5, y - 37, statusColor(m), Math.sin(time * 4 + m.id) > -0.3, 1.4);
+  // drone count badge on the tower
+  const n = m.bots.length;
+  if (n > 0) {
+    rrect(c, x + 13, y - 31, 10, 8, 3); c.fillStyle = SCI.violetD; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.8; c.stroke();
+    c.fillStyle = SCI.cyan; c.font = '900 6.5px system-ui'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText(String(n), x + 18, y - 26.8);
+  }
 }
 
 export function drawBots(c: C, m: Machine, time: number, fx: Effects, onScreen: boolean) {
@@ -479,10 +598,20 @@ function drawBot(c: C, b: Bot, time: number, fx: Effects, onScreen: boolean) {
   c.fillStyle = 'rgba(200,220,255,0.35)'; ellipse(c, x, by + 0.3, 7, 2.2); c.fill();
   c.strokeStyle = 'rgba(255,255,255,0.55)'; c.lineWidth = 0.5;
   for (let i = 0; i < 2; i++) { const a = time * 50 + i * 1.57; c.beginPath(); c.moveTo(x - Math.cos(a) * 6.5, by + 0.3 - Math.sin(a) * 2); c.lineTo(x + Math.cos(a) * 6.5, by + 0.3 + Math.sin(a) * 2); c.stroke(); }
-  // cargo pod underneath
-  const fill = Math.min(1, b.carryTotal / 30);
-  rrect(c, x - 3.4, by + 2, 6.8, 4, 1.8); c.fillStyle = SCI.violetD; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.6; c.stroke();
-  if (fill > 0) { c.fillStyle = SCI.cyan; c.fillRect(x - 2.6, by + 3.2, 5.2 * Math.max(0.25, fill), 1.6); }
+  // cargo pod underneath: a glass bubble showing what it carries
+  if (b.carryTotal > 0) {
+    let m1 = 0, m2 = -1;
+    for (let k = 1; k < MAT_COUNT; k++) if (b.carry[k] > b.carry[m1]) m1 = k;
+    for (let k = 0; k < MAT_COUNT; k++) if (k !== m1 && b.carry[k] > 0 && (m2 < 0 || b.carry[k] > b.carry[m2])) m2 = k;
+    c.strokeStyle = INK; c.lineWidth = 0.6; c.beginPath(); c.moveTo(x - 2, by + 1.5); c.lineTo(x - 2.6, by + 4); c.moveTo(x + 2, by + 1.5); c.lineTo(x + 2.6, by + 4); c.stroke();
+    c.beginPath(); c.arc(x, by + 7, 4.4, 0, 6.28); c.fillStyle = 'rgba(200,240,255,0.35)'; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.7; c.stroke();
+    if (m2 >= 0) drawMatIcon(c, m2, x + 1.8, by + 8, 5);
+    drawMatIcon(c, m1, x - 0.8, by + 6.8, 6);
+    c.fillStyle = 'rgba(255,255,255,0.6)'; c.beginPath(); c.arc(x - 1.8, by + 5, 0.9, 0, 6.28); c.fill();
+    if (b.state === BOT_RETURN && Math.sin(time * 9 + b.anim * 5) > 0.92) glow(c, x, by + 7, 6, SCI.cyan, 0.5);
+  } else {
+    rrect(c, x - 3.4, by + 2, 6.8, 4, 1.8); c.fillStyle = SCI.violetD; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.6; c.stroke();
+  }
   // round body with one big eye
   c.beginPath(); c.arc(x, by - 2.6, 4.8, 0, 6.28);
   c.fillStyle = rad(c, x - 1.6, by - 4.4, 0, 6, [[0, '#ffffff'], [0.5, SCI.shell], [1, SCI.shellD]]); c.fill();
@@ -661,6 +790,85 @@ function drawRecycler(c: C, x: number, y: number, time: number, fx: Effects, onS
 }
 
 // =====================================================================================================
+// CARGO TELEPORTER (beacon, 2x2) — a remote drop-off that beams everything to the silos
+// =====================================================================================================
+const beaconBase = () => cachedLayer('beacon1', -8, -40, 82, 112, (c) => {
+  groundShadow(c, 32, 58, 34, 9, 0.4);
+  // octagonal deck
+  const oct = (oy: number, r: number, k: number) => { c.beginPath(); for (let i = 0; i < 8; i++) { const a = (i / 8) * 6.28 + Math.PI / 8; c.lineTo(32 + Math.cos(a) * r, 36 + oy + Math.sin(a) * r * k); } c.closePath(); };
+  oct(5, 31, 0.62); c.fillStyle = SCI.violetD; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+  oct(0, 31, 0.62); c.fillStyle = '#6a5d95'; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+  oct(0, 25, 0.62); c.strokeStyle = 'rgba(255,255,255,0.14)'; c.lineWidth = 1; c.stroke();
+  // hazard ring around the pad
+  c.save(); c.translate(32, 36); c.scale(1, 0.5);
+  for (let i = 0; i < 16; i++) { const a0 = (i / 16) * 6.28; c.beginPath(); c.arc(0, 0, 21, a0, a0 + 0.3); c.arc(0, 0, 18, a0 + 0.3, a0, true); c.closePath(); c.fillStyle = i % 2 ? SCI.orange : SCI.violetD; c.fill(); }
+  c.restore();
+  // the pad: cream rim, dark well
+  ellipse(c, 32, 37.5, 17, 8.4); c.fillStyle = SCI.shellD; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+  ellipse(c, 32, 36, 17, 8.4); c.fillStyle = SCI.shell; c.fill(); c.strokeStyle = INK; c.lineWidth = INK_W; c.stroke();
+  ellipse(c, 32, 36, 13, 6.2); c.fillStyle = '#16122a'; c.fill(); c.strokeStyle = SCI.teal; c.lineWidth = 1.2; c.stroke();
+  // three emitter pylons (back left, back right, front)
+  for (const [px, py, h] of [[8, 30, 20], [56, 30, 20], [32, 58, 14]] as [number, number, number][]) {
+    shell(c, px - 4, py - h, 8, h + 4, SCI.shell, 3.5);
+    c.fillStyle = SCI.teal; c.fillRect(px - 3.6, py - h * 0.45, 7.2, 1.6);
+    rrect(c, px - 3, py - h - 3, 6, 4, 1.6); c.fillStyle = SCI.violet; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.8; c.stroke();
+  }
+  // antenna mast at the back
+  pipe(c, [52, 18, 52, -24], 1.6, SCI.violet);
+  for (const yy of [-6, -16]) pipe(c, [48, yy, 56, yy], 0.9, SCI.violet);
+  ellipse(c, 52, 19, 4, 2); c.fillStyle = SCI.violetD; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.8; c.stroke();
+  // little sign
+  rrect(c, -2, 46, 22, 9, 3); c.fillStyle = SCI.orange; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.9; c.stroke();
+  stencil(c, 'TELEP.', 9, 51, 4.4, '#3b1d05');
+});
+
+function drawBeacon(c: C, m: Machine, x: number, y: number, time: number, g: Game, fx: Effects, onScreen: boolean) {
+  blit(c, beaconBase(), x, y);
+  const pcx = x + 32, pcy = y + 36;
+  // brighter when BIP stands by or the yard is busy
+  const p = g.player;
+  const near = Math.hypot(p.x - (x + 32), p.y - (y + 40)) < TILE * 4;
+  const k = near ? 1 : g.yardTotal > 0.5 ? 0.75 : 0.5;
+  c.save(); c.globalCompositeOperation = 'lighter';
+  // swirling portal in the well
+  c.save(); c.translate(pcx, pcy); c.scale(1, 0.48);
+  for (let i = 0; i < 3; i++) {
+    const a = time * (2.4 + i * 0.7) + i * 2.1;
+    c.strokeStyle = `rgba(95,242,255,${0.35 * k + 0.15})`; c.lineWidth = 2.4 - i * 0.6;
+    c.beginPath(); c.arc(0, 0, 11 - i * 3, a, a + 2.6); c.stroke();
+  }
+  c.fillStyle = rad(c, 0, 0, 0, 13, [[0, `rgba(190,250,255,${0.55 * k})`], [1, 'rgba(95,242,255,0)']]); c.beginPath(); c.arc(0, 0, 13, 0, 6.28); c.fill();
+  c.restore();
+  // light column
+  const colH = 46 + Math.sin(time * 3) * 3;
+  c.fillStyle = lin(c, 0, pcy, 0, pcy - colH, [[0, `rgba(95,242,255,${0.42 * k})`], [1, 'rgba(95,242,255,0)']]);
+  c.beginPath(); c.moveTo(pcx - 11, pcy); c.lineTo(pcx + 11, pcy); c.lineTo(pcx + 6, pcy - colH); c.lineTo(pcx - 6, pcy - colH); c.closePath(); c.fill();
+  // energy arcs from the pylons to the pad
+  for (const [px, py] of [[x + 8, y + 7], [x + 56, y + 7], [x + 32, y + 41]] as [number, number][]) {
+    const j = Math.sin(time * 23 + px) * 2;
+    energyLine(c, [px, py, (px + pcx) / 2 + j, (py + pcy - 6) / 2 - 3, pcx, pcy - 4], 0.8, SCI.cyan, 0.35 + 0.4 * k);
+    glow(c, px, py, 4, SCI.cyan, 0.35 + 0.35 * k);
+  }
+  c.restore();
+  // materials dematerializing upward
+  for (let i = 0; i < 4; i++) {
+    const t = (time * 0.45 + i / 4) % 1;
+    const mat = (i + Math.floor(time * 0.45 + i / 4)) % MAT_COUNT;
+    c.save();
+    c.globalAlpha *= (1 - t) * (0.5 + 0.5 * k);
+    drawMatIcon(c, mat, pcx + Math.sin(time * 2 + i * 1.7) * 6, pcy - 6 - t * 40, 9 - t * 4);
+    c.restore();
+  }
+  // service ring guide lights + mast beacon
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * 6.28;
+    lamp(c, pcx + Math.cos(a) * 19.5, pcy + Math.sin(a) * 9.6, SCI.cyan, Math.floor(time * 6) % 8 === i, 0.7);
+  }
+  lamp(c, x + 52, y - 26, '#f87171', Math.sin(time * 3 + m.id) > 0.2, 1.4);
+  if (near && onScreen && Math.random() < 0.08) fx.burst(pcx + (Math.random() - 0.5) * 16, pcy - 10, 'magic', 1);
+}
+
+// =====================================================================================================
 // OUTPOST (depot, 3x3) — office pod, MÃE's landing pad, six material silos, yard hopper
 // =====================================================================================================
 const SILO_X0 = 3, SILO_W = 13, SILO_GAP = 2.4, SILO_TOP = 44, SILO_H = 36;
@@ -782,6 +990,9 @@ function drawDepot(c: C, x: number, y: number, time: number, g: Game, fx: Effect
     c.strokeStyle = 'rgba(255,255,255,0.35)'; c.lineWidth = 0.6;
     for (let k = 1; k < 4; k++) { const ty = sy + (SILO_H * k) / 4; c.beginPath(); c.moveTo(sx + SILO_W - 4, ty); c.lineTo(sx + SILO_W - 1.5, ty); c.stroke(); }
     if (f >= 0.999) glow(c, sx + SILO_W / 2, sy, 8, col, 0.4 + Math.sin(time * 5) * 0.15);
+    // material badge on the glass
+    c.beginPath(); c.arc(sx + SILO_W / 2, sy + 7, 5, 0, 6.28); c.fillStyle = 'rgba(243,234,216,0.92)'; c.fill(); c.strokeStyle = INK; c.lineWidth = 0.7; c.stroke();
+    drawMatIcon(c, i, sx + SILO_W / 2, sy + 7, 9);
   }
   // yard hopper: queue waiting to be processed
   const yf = Math.min(1, g.yardTotal / Math.max(1, g.yardCap()));

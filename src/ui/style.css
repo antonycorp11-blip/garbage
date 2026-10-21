@@ -776,3 +776,15 @@ h3.mrole.coleta { color: #ffb02e; } h3.mrole.logistica { color: #38bdf8; } h3.mr
 .buildbar .bb-mix i { display: flex; align-items: center; justify-content: center; font: 900 9.5px var(--font); color: #2a1a10; font-style: normal; white-space: nowrap; overflow: hidden; }
 .spot-pin .pm { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #2a1a10; margin-left: 2px; }
 .cbanner.sector { background: linear-gradient(180deg, #d5fbff, #5eead4); color: #063a36; }
+/* minimap on phones too: small, top-right under the menu row */
+.minimap { border: 2.5px solid var(--ink) !important; box-shadow: 0 3px 0 var(--ink), 0 8px 18px rgba(0,0,0,.35) !important; }
+body.touch .minimap { width: 108px; height: 108px; bottom: auto; top: calc(70px + var(--safe-t)); right: calc(8px + env(safe-area-inset-right, 0px)); border-radius: 12px; }
+body.touch.building .minimap { display: none; }
+@media (orientation: portrait) { body.touch .minimap { top: calc(430px + var(--safe-t)); } }
+body.touch.panel-open .minimap { display: none; }
+/* skill tree: full-bleed, compact floating detail card (no side box) */
+.sk { background: radial-gradient(ellipse at 50% 45%, #33233a 0%, #160f12 80%) !important; }
+@media (orientation: landscape) and (max-height: 520px) {
+  .sk-detail { top: auto !important; bottom: 8px !important; right: 8px !important; left: auto !important; width: min(300px, 42%) !important; max-height: 70%; flex-direction: column; align-items: stretch; }
+  .sk-ctrl { right: 8px !important; top: 8px !important; }
+}

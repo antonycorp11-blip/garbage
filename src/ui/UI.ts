@@ -10,7 +10,7 @@ import { G_ASPHALT, G_CONCRETE, G_EARTH, G_GRAVEL, G_RUINFLOOR } from '../data/r
 import { TOOLS } from '../data/tools';
 import { UPGRADES, UPGRADE_MAP } from '../data/upgrades';
 import { Game, GameEvent, SECTORS } from '../game/Game';
-import { Machine, botCount, centerX, centerY, hubRadius, isBelt, isHub, machineBufferCap, machineRadius, machineRate } from '../game/Machines';
+import { MAX_EXTRA_DRONES, Machine, botCount, centerX, centerY, hubRadius, isBelt, isHub, machineBufferCap, machineRadius, machineRate } from '../game/Machines';
 import { drawTool, drawWorker } from '../render/character';
 import { drawBelt, drawMachine } from '../render/machinesDraw';
 import { drawDiscovery } from '../render/specialsDraw';
@@ -84,7 +84,7 @@ export class UI {
     this.el.goal = h(`<div class="goal"></div>`); r.appendChild(this.el.goal);
     this.el.hint = h(`<div class="hint desk-only"></div>`); r.appendChild(this.el.hint);
     this.el.msgs = h(`<div class="msgs"></div>`); r.appendChild(this.el.msgs);
-    const mm = h(`<div class="minimap pe desk-only"><canvas width="150" height="150"></canvas></div>`);
+    const mm = h(`<div class="minimap pe"><canvas width="150" height="150"></canvas></div>`);
     mm.addEventListener('click', () => this.openModal('map'));
     r.appendChild(mm);
     this.el.minimap = mm;
@@ -360,17 +360,19 @@ export class UI {
     else if (m.type === 'ancient') status = 'Entrega direta no posto (mistério)';
     else if (m.status === 'full' && m.inService && yardFull) { status = 'Parada: o pátio do posto está lotado. Construa uma Prensa.'; cls = 'bad'; }
     else if (m.status === 'full') { status = 'Caçamba cheia! Conecte ao posto ou esvazie.'; cls = 'bad'; }
+    else if (m.status === 'idle' && m.type === 'collector' && m.outConveyor < 0) { status = m.idleT < 0 ? 'Zona esgotada. Use ↔ Mover para levar a outra área (a zona vai junto).' : 'Andando até a próxima sucata da zona…'; cls = m.idleT < 0 ? 'warn' : 'ok'; }
+    else if (m.status === 'idle' && m.type === 'robots') { status = 'Sem sucata leve no alcance. Use ↔ Mover.'; cls = 'warn'; }
     else if (m.status === 'idle') { status = (def.heavy ? 'Área limpa! ' : 'Só sobrou sucata pesada (ou nada) no alcance. ') + 'Use ↔ Mover para levá-la a uma área com lixo.'; cls = 'warn'; }
     else status = 'Trabalhando';
     let delivery = '';
     if (!isHub(m.type) && !isBelt(m.type) && m.type !== 'ancient') {
-      delivery = m.inService ? 'Área de serviço do posto ✓' : m.outConveyor >= 0 ? (m.linked ? 'Esteira conectada ✓' : 'Esteira não chega ao posto ✗') : 'Sem entrega automática ✗';
+      delivery = m.type === 'robots' ? 'Drones levam direto ao posto ✓' : m.inService ? 'Área de serviço do posto ✓' : m.outConveyor >= 0 ? (m.linked ? 'Esteira conectada ✓' : 'Esteira não chega ao posto ✗') : 'Sem entrega automática ✗';
     }
     const canUp = MACHINES[m.type].buildable && m.type !== 'conveyor' && m.level < MAX_MACHINE_LEVEL;
     const upCost = Math.ceil(machineUpgradeCost(m.type, m.level) * d.costMult);
     const near = Math.hypot(g.player.tx - centerX(m), g.player.ty - centerY(m)) < def.size / 2 + 2;
-    const needsLink = def.buffer > 0 && !m.inService && !(m.outConveyor >= 0 && m.linked);
-    const plan = needsLink && g.isUnlocked('conveyor') ? g.planConnection(m) : null;
+    const needsLink = def.buffer > 0 && m.type !== 'robots' && !m.inService && !(m.outConveyor >= 0 && m.linked);
+    const plan = needsLink && g.isUnlocked('conveyor') ? this.cachedPlan(m) : null;
     const kv: string[] = [`<span>Função</span><span>${esc(def.func)}</span>`];
     if (isHub(m.type)) {
       kv.push(`<span>Pátio</span><span>${fmtInt(g.yardTotal)} / ${fmtInt(g.yardCap())}</span>`);
@@ -381,14 +383,16 @@ export class UI {
     if (def.rate > 0) kv.push(`<span>Ergue pesado</span><span>${def.heavy ? 'Sim ✓' : 'Não'}</span>`);
     if (def.rate > 0) kv.push(`<span>Velocidade</span><span>${fmtShort(machineRate(m, d) * (m.type === 'robots' ? botCount(m, d) : 1))}/s</span>`);
     if (def.radius > 0 && !isHub(m.type)) kv.push(`<span>Alcance</span><span>${machineRadius(m, d).toFixed(1)} m</span>`);
-    if (m.type === 'robots') kv.push(`<span>Robôs</span><span>${botCount(m, d)}</span>`);
-    if (def.buffer > 0) kv.push(`<span>Caçamba</span><span>${fmtInt(m.bufferTotal)} / ${fmtInt(machineBufferCap(m, d))}</span>`);
+    if (m.type === 'robots') kv.push(`<span>Drones</span><span>${botCount(m, d)}${m.extra ? ` (${m.extra} comprados)` : ''}</span>`);
+    if (m.type === 'collector') kv.push(`<span>Zona</span><span>${g.roamRadius(m).toFixed(0)} m ao redor de onde foi construído</span>`);
+    if (def.buffer > 0 && m.type !== 'robots') kv.push(`<span>Caçamba</span><span>${fmtInt(m.bufferTotal)} / ${fmtInt(machineBufferCap(m, d))}</span>`);
     if (m.collected > 0) kv.push(`<span>Total coletado</span><span>${fmtInt(m.collected)}</span>`);
     if (delivery) kv.push(`<span>Entrega</span><span>${delivery}</span>`);
     if (isBelt(m.type)) kv.push(`<span>Pacotes</span><span>${m.belt.length}</span>`);
     const head = `<b>${def.name}</b>${def.buildable && m.type !== 'conveyor' ? `<span class="lvl">Nv ${m.level}/${MAX_MACHINE_LEVEL}</span>` : ''}<button class="close" data-a="x" style="width:32px;height:32px">✕</button>`;
     const acts = `${needsLink ? (plan ? `<button class="btn ${g.missingFor(plan.cost) ? 'disabled' : ''} wide" data-a="link">🔗 Conectar ao posto · ${plan.tiles.length} esteiras · ${fmtMoney(plan.cost.money)}</button>` : `<div class="st bad wide">${g.isUnlocked('conveyor') ? 'Sem caminho limpo até o posto: limpe o lixo entre eles' : 'Para entregar de longe, desbloqueie Logística (esteiras)'}</div>`) : ''}
         ${canUp ? `<button class="btn ${g.money < upCost ? 'disabled' : 'green'}" data-a="up">Melhorar ${fmtMoney(upCost)}</button>` : ''}
+        ${m.type === 'robots' ? (m.extra < MAX_EXTRA_DRONES ? `<button class="btn ${g.money < g.droneCost(m) ? 'disabled' : 'green'}" data-a="drone">+1 drone ${fmtMoney(g.droneCost(m))}</button>` : `<span class="st ok">Hangar lotado</span>`) : ''}
         ${m.bufferTotal > 0 ? `<button class="btn ${near ? '' : 'disabled'}" data-a="empty" title="Chegue perto">Esvaziar no tanque</button>` : ''}
         ${isBelt(m.type) ? `<button class="btn ghost" data-a="rot">↻ Girar</button>` : ''}
         ${def.buildable && !isBelt(m.type) ? `<button class="btn ghost" data-a="move">↔ Mover</button>` : ''}
@@ -409,6 +413,17 @@ export class UI {
     if (!this.recentlyPressed()) put('.acts', acts);
   }
 
+  private planCache: { id: number; t: number; plan: ReturnType<Game['planConnection']> } | null = null;
+  /** Belt route planning is costly: reuse it for a couple of seconds. */
+  private cachedPlan(m: Machine) {
+    const now = performance.now();
+    const c = this.planCache;
+    if (c && c.id === m.id && now - c.t < 2000) return c.plan;
+    const plan = this.game.planConnection(m);
+    this.planCache = { id: m.id, t: now, plan };
+    return plan;
+  }
+
   /** Handles taps on the machine panel buttons (bound once). */
   private onPanelAction(a: string) {
     const m = this.selected;
@@ -422,7 +437,8 @@ export class UI {
       case 'rot': m.dir = (m.dir + 1) % 4; g.machines.linksDirty = true; this.app.audio.play('click'); break;
       case 'del': g.demolish(m); this.select(null); break;
       case 'move': this.app.startMove(m); break;
-      case 'link': { const e = g.connectToDepot(m); if (e) { this.app.audio.play('error'); this.toastErr(e); } else this.message('Esteiras construídas! Os materiais agora vão sozinhos até o posto.', 'Sistema'); break; }
+      case 'link': { this.planCache = null; const e = g.connectToDepot(m); if (e) { this.app.audio.play('error'); this.toastErr(e); } else this.message('Esteiras construídas! Os materiais agora vão sozinhos até o posto.', 'Sistema'); break; }
+      case 'drone': { const e = g.buyDrone(m); if (e) { this.toastErr(e); } break; }
     }
     this.mpanelT = 0;
   }
@@ -527,7 +543,7 @@ export class UI {
     c.translate(210, 230);
     c.scale(sc, sc);
     c.translate(-(size * TILE) / 2, -(size * TILE) / 2);
-    const fake: Machine = { id: 0, type, tx: 0, ty: 0, dir: 0, level: 1, buffer: [0, 0, 0, 0, 0, 0], bufferTotal: 0, work: 0, cursor: 0, collected: 0, belt: [{ mat: 0, units: 1, sorted: false, t: 0.5 }], bots: [], status: 'working', targets: null, targetsRadius: 0, anim: 0, lastTarget: -1, outConveyor: -1, inService: false, linked: true, deliverT: 0, built: 1 };
+    const fake: Machine = { id: 0, type, tx: 0, ty: 0, dir: 0, level: 1, buffer: [0, 0, 0, 0, 0, 0], bufferTotal: 0, work: 0, cursor: 0, collected: 0, belt: [{ mat: 0, units: 1, sorted: false, t: 0.5 }], bots: [], status: 'working', targets: null, targetsRadius: 0, anim: 0, lastTarget: -1, outConveyor: -1, inService: false, linked: true, deliverT: 0, built: 1, extra: 0, ox: 0, oy: 0, anchorX: 0, anchorY: 0, idleT: 0 };
     if (isBelt(type)) drawBelt(c, fake, this.game, 0.3);
     else drawMachine(c, fake, this.game, 0.3, this.app.fx, false);
     const px = c.getImageData(0, 0, 420, 420).data;

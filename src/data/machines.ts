@@ -1,4 +1,4 @@
-export type MachineType = 'collector' | 'arm' | 'conveyor' | 'separator' | 'crusher' | 'robots' | 'excavator' | 'recycler' | 'ancient' | 'depot';
+export type MachineType = 'collector' | 'arm' | 'conveyor' | 'separator' | 'crusher' | 'robots' | 'excavator' | 'recycler' | 'ancient' | 'depot' | 'beacon';
 
 export type MachineRole = 'coleta' | 'logistica' | 'processamento' | 'deposito';
 
@@ -37,8 +37,8 @@ export const MACHINES: Record<MachineType, MachineDef> = {
   collector: {
     ...D, type: 'collector', name: 'Coletor de Sucata', short: 'Coletor', role: 'coleta', size: 1, money: 120, mats: [0, 15, 0, 0, 0, 0], costGrowth: 1.17,
     rate: 1.8, radius: 3.5, buffer: 80, unlock: null, solid: false, buildable: true,
-    func: 'Aspira a sucata leve ao redor. Não ergue peças pesadas.',
-    desc: 'A primeira automação: barato, incansável e meio barulhento. Deixa para trás a base pesada das pilhas.',
+    func: 'Aspira a sucata leve ao redor e, quando acaba, anda sozinho até a próxima pilha da sua zona.',
+    desc: 'Barato e incansável. Fica dentro da zona onde foi construído (ela cresce com o nível). Se estiver ligado a uma esteira, fica parado.',
   },
   arm: {
     ...D, type: 'arm', name: 'Guindaste Hidráulico', short: 'Guindaste', role: 'coleta', size: 1, money: 900, mats: [0, 45, 0, 0, 8, 0], costGrowth: 1.18,
@@ -66,8 +66,8 @@ export const MACHINES: Record<MachineType, MachineDef> = {
   },
   robots: {
     ...D, type: 'robots', name: 'Hangar de Drones', short: 'Drones', role: 'coleta', size: 1, money: 6000, mats: [0, 120, 0, 0, 80, 0], costGrowth: 1.32,
-    rate: 6, radius: 14, buffer: 800, unlock: 'a_robots', solid: false, buildable: true,
-    func: 'Drones caçam sucata leve espalhada numa área grande e trazem para o hangar.',
+    rate: 4, radius: 14, buffer: 800, unlock: 'a_robots', solid: false, buildable: true,
+    func: 'Drones caçam sucata leve numa área grande e voam direto até o posto mais próximo. Sem esteiras.',
     desc: 'Perfeitos para os restos que as máquinas fixas não alcançam. Preferem pilhas pequenas e espalhadas.',
   },
   excavator: {
@@ -81,6 +81,12 @@ export const MACHINES: Record<MachineType, MachineDef> = {
     rate: 0, radius: 10, buffer: 0, process: 300, yard: 3000, unlock: 'r_center', solid: true, buildable: true,
     func: 'Um segundo posto gigante: +300/s de vazão, recebe esteiras e dá +15% de valor.',
     desc: 'Para o fluxo massivo do fim do jogo. Também acelera as máquinas em 10% (até 3 refinarias).',
+  },
+  beacon: {
+    ...D, type: 'beacon', name: 'Teleportador de Carga', short: 'Teleportador', role: 'deposito', size: 2, money: 2500, mats: [0, 120, 0, 0, 40, 0], costGrowth: 1.6,
+    rate: 0, radius: 5, buffer: 0, unlock: 'a_belts', solid: true, buildable: true,
+    func: 'Um mini-posto longe da base: recebe esteiras, máquinas no círculo e a sua descarga, e teletransporta tudo para os silos.',
+    desc: 'Construa nas frentes de trabalho distantes. Não processa nada sozinho: o material entra no pátio do posto principal.',
   },
   ancient: {
     ...D, type: 'ancient', name: 'Obelisco Ancestral', short: 'Obelisco', role: 'coleta', size: 1, money: 0, mats: [0, 0, 0, 0, 0, 0], costGrowth: 1,
@@ -96,7 +102,7 @@ export const MACHINES: Record<MachineType, MachineDef> = {
   },
 };
 
-export const BUILD_ORDER: MachineType[] = ['collector', 'arm', 'robots', 'excavator', 'conveyor', 'separator', 'crusher', 'recycler'];
+export const BUILD_ORDER: MachineType[] = ['collector', 'arm', 'robots', 'excavator', 'conveyor', 'separator', 'crusher', 'beacon', 'recycler'];
 export const ROLE_NAMES: Record<MachineRole, string> = {
   coleta: 'Coleta — tiram a sucata do terreno',
   logistica: 'Logística — levam o material até o posto',

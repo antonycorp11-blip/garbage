@@ -24,7 +24,7 @@ export interface SaveData {
   upgrades: Record<string, number>;
   flags: Record<string, boolean>;
   player: { x: number; y: number; backpack: number[]; carried: number };
-  machines: { id: number; type: MachineType; tx: number; ty: number; dir: number; level: number; buffer: number[]; collected: number; belt: { mat: number; units: number; sorted: boolean; t: number }[] }[];
+  machines: { id: number; type: MachineType; tx: number; ty: number; dir: number; level: number; buffer: number[]; collected: number; belt: { mat: number; units: number; sorted: boolean; t: number }[]; extra?: number; ax?: number; ay?: number }[];
   specials: { revealed: boolean; opened: boolean }[];
   stats: Game['stats'];
   milestone: number;
@@ -59,7 +59,7 @@ export function serialize(g: Game): SaveData {
       const buffer = m.buffer.slice();
       // robots carry loads home on reload
       for (const b of m.bots) for (let k = 0; k < MAT_COUNT; k++) buffer[k] += b.carry[k];
-      return { id: m.id, type: m.type, tx: m.tx, ty: m.ty, dir: m.dir, level: m.level, buffer, collected: m.collected, belt: m.belt.map((p) => ({ ...p })) };
+      return { id: m.id, type: m.type, tx: m.tx, ty: m.ty, dir: m.dir, level: m.level, buffer, collected: m.collected, belt: m.belt.map((p) => ({ ...p })), extra: m.extra, ax: m.anchorX, ay: m.anchorY };
     }),
     specials: g.specials.map((s) => ({ revealed: s.revealed, opened: s.opened })),
     stats: { ...g.stats },
@@ -111,6 +111,10 @@ export function applySave(g: Game, raw: unknown): void {
     m.buffer = mats(ms.buffer);
     m.bufferTotal = m.buffer.reduce((a, b) => a + b, 0);
     m.collected = num(ms.collected);
+    m.extra = Math.max(0, Math.min(4, Math.floor(num(ms.extra))));
+    m.anchorX = num(ms.ax, m.tx); m.anchorY = num(ms.ay, m.ty);
+    // drones deliver straight to the depot now: old hangar stock goes to the silos
+    if (m.type === 'robots' && m.bufferTotal > 0) { g.deliver(m.buffer.slice(), 0, -1, -1, true); m.buffer.fill(0); m.bufferTotal = 0; }
     m.built = 1;
     if (Array.isArray(ms.belt)) m.belt = ms.belt.slice(0, 8).map((p) => ({ mat: Math.max(0, Math.min(MAT_COUNT - 1, num(p.mat))), units: Math.max(0, num(p.units)), sorted: !!p.sorted, t: Math.max(0, Math.min(1, num(p.t))) }));
   }

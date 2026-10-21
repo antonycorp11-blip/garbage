@@ -26,7 +26,7 @@ interface BuildState extends BuildPreview { painting: boolean; lastTx: number; l
   /** garbage within reach of the ghost */
   reach: number;
   /** material mix within reach (fractions) */
-  mix?: number[]; moving: { level: number; fromTx: number; fromTy: number; fromDir: number } | null }
+  mix?: number[]; moving: { level: number; fromTx: number; fromTy: number; fromDir: number; extra: number } | null }
 
 export class App implements PointerSink {
   game: Game;
@@ -165,7 +165,7 @@ export class App implements PointerSink {
     const s = MACHINES[info.type].size;
     // the ghost starts where the machine was; suggestions are around it
     const spots = isBelt(info.type) ? [] : this.game.findSpots(info.type, info.tx + s / 2, info.ty + s / 2, 4);
-    this.build = { type: info.type, tx: info.tx, ty: info.ty, dir: info.dir, problem: null, painting: false, lastTx: -1, lastTy: -1, placedId: -1, grab: null, moving: { level: info.level, fromTx: info.tx, fromTy: info.ty, fromDir: info.dir }, spots, reach: 0, cam: { x: (info.tx + s / 2) * TILE, y: (info.ty + s / 2) * TILE } };
+    this.build = { type: info.type, tx: info.tx, ty: info.ty, dir: info.dir, problem: null, painting: false, lastTx: -1, lastTy: -1, placedId: -1, grab: null, moving: { level: info.level, fromTx: info.tx, fromTy: info.ty, fromDir: info.dir, extra: info.extra }, spots, reach: 0, cam: { x: (info.tx + s / 2) * TILE, y: (info.ty + s / 2) * TILE } };
     this.updateGhostProblem();
     this.ui.showBuildBar();
   }
@@ -174,7 +174,7 @@ export class App implements PointerSink {
     if (!this.build) return;
     const mv = this.build.moving;
     // a machine being moved goes back to where it was
-    if (mv) this.game.placeMoved(this.build.type, mv.fromTx, mv.fromTy, mv.level, mv.fromDir, true);
+    if (mv) this.game.placeMoved(this.build.type, mv.fromTx, mv.fromTy, mv.level, mv.fromDir, true, mv.extra);
     this.build = null;
     this.ui.showBuildBar();
   }
@@ -253,7 +253,7 @@ export class App implements PointerSink {
   private place(): boolean {
     const b = this.build!;
     if (b.moving) {
-      const e = this.game.placeMoved(b.type, b.tx, b.ty, b.moving.level, b.dir);
+      const e = this.game.placeMoved(b.type, b.tx, b.ty, b.moving.level, b.dir, false, b.moving.extra);
       if (e) { this.audio.play('error'); this.fx.text((b.tx + 0.5) * TILE, b.ty * TILE - 14, e, '#fca5a5'); return false; }
       const placed = this.game.machines.at(b.tx, b.ty);
       this.build = null;
@@ -269,6 +269,8 @@ export class App implements PointerSink {
     }
     const m = this.game.machines.at(b.tx, b.ty);
     b.placedId = m ? m.id : -1;
+    // a single belt dropped next to a line or the depot joins it
+    if (m && isBelt(m.type) && !b.painting) { this.game.autoTurnBelt(m); b.dir = m.dir; }
     b.lastTx = b.tx; b.lastTy = b.ty;
     if (this.input.touch && this.build && !b.painting) {
       // ready for the next one: belts advance along their direction, machines jump to the next free spot
@@ -365,6 +367,8 @@ export class App implements PointerSink {
     b.grab = null;
     if (b.painting) {
       b.painting = false;
+      const last = b.placedId >= 0 ? this.game.machines.byId.get(b.placedId) : undefined;
+      if (last) { this.game.autoTurnBelt(last); b.dir = last.dir; }
       // after drawing, park the ghost on the tile after the last belt, ready to continue
       if (touch && b.lastTx >= 0 && b.placedId >= 0 && b.tx === b.lastTx && b.ty === b.lastTy) { b.tx += DX[b.dir]; b.ty += DY[b.dir]; this.updateGhostProblem(); }
       this.ui.refreshBuildBar();
