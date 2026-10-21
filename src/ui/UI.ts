@@ -1084,6 +1084,7 @@ export class UI {
     body.innerHTML = `<h2>Opções</h2>
       <div class="setrow"><label>Música</label><input type="range" min="0" max="1" step="0.05" value="${st.music}" data-s="music"/></div>
       <div class="setrow"><label>Efeitos sonoros</label><input type="range" min="0" max="1" step="0.05" value="${st.sfx}" data-s="sfx"/></div>
+      <div class="setrow"><label>Gráficos <span class="muted">(Automático ajusta sozinho ao seu aparelho)</span></label><button class="toggle on" data-g>${({ auto: 'Automático', high: 'Alto', low: 'Leve' } as Record<string, string>)[st.gfx ?? 'auto']}</button></div>
       <div class="setrow"><label>Partículas</label><button class="toggle ${st.quality >= 1 ? 'on' : ''}" data-q>${st.quality >= 1 ? 'Alta' : 'Econômica'}</button></div>
       <div class="setrow"><label>Mostrar áreas de serviço dos postos</label><button class="toggle ${st.ranges ? 'on' : ''}" data-r>${st.ranges ? 'Sim' : 'Não'}</button></div>
       <div class="setrow"><label>Salvar agora <span class="muted">(o jogo salva sozinho a cada 15 s)</span></label><button class="btn ghost" data-save>Salvar</button></div>
@@ -1095,6 +1096,7 @@ export class UI {
       (st as unknown as Record<string, number>)[inp.dataset.s!] = Number(inp.value);
       this.app.applySettings();
     }));
+    body.querySelector('[data-g]')!.addEventListener('click', () => { const order = ['auto', 'high', 'low'] as const; st.gfx = order[(order.indexOf(st.gfx ?? 'auto') + 1) % 3]; this.app.applySettings(); this.renderModal(true); });
     body.querySelector('[data-q]')!.addEventListener('click', () => { st.quality = st.quality >= 1 ? 0.5 : 1; this.app.applySettings(); this.renderModal(true); });
     body.querySelector('[data-r]')!.addEventListener('click', () => { st.ranges = !st.ranges; this.app.applySettings(); this.renderModal(true); });
     body.querySelector('[data-save]')!.addEventListener('click', () => { this.app.save(); this.message('Progresso salvo.', 'Sistema'); });

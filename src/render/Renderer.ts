@@ -7,7 +7,6 @@ import { ChunkRenderer } from './ChunkRenderer';
 import { Effects } from './Effects';
 import { drawAimTile, drawAreaTool, drawPlayer } from './character';
 import { drawBelt, drawBots, drawMachine, drawRange } from './machinesDraw';
-import { rad } from './paint';
 import { drawSpecialAt } from './specialsDraw';
 import { Life } from './life';
 
@@ -20,7 +19,6 @@ export class Renderer {
   c: CanvasRenderingContext2D;
   W = 0; H = 0; dpr = 1;
   cam = { x: 0, y: 0, zoom: 1, targetZoom: 1 };
-  private vignette: HTMLCanvasElement | null = null;
   private ghost: Machine | null = null;
   showRanges = false;
   selected: Machine | null = null;
@@ -37,14 +35,28 @@ export class Renderer {
     this.life = new Life(game, fx);
   }
 
+  /** 0 = best looking … 3 = lightest (set by the adaptive quality governor) */
+  tier = 0;
+  /** screen-space tint/vignette live in a CSS layer (composited by the GPU, free for the canvas) */
+  private overlay: HTMLElement | null = null;
+
+  setTier(t: number) {
+    if (t === this.tier) return;
+    this.tier = t;
+    this.chunks.lite = t >= 2;
+    this.resize();
+    // chunk canvases close to the real on-screen size: less memory and much cheaper to draw
+    this.chunks.setOutputScale(t === 0 ? this.chunks.assetRS : Math.ceil(this.dpr * 1.15 * 4) / 4);
+  }
+
   resize() {
-    this.dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const caps = [2, 1.5, 1.25, 1];
+    this.dpr = Math.min(window.devicePixelRatio || 1, caps[this.tier] ?? 1);
     this.W = window.innerWidth; this.H = window.innerHeight;
     this.canvas.width = Math.round(this.W * this.dpr);
     this.canvas.height = Math.round(this.H * this.dpr);
     this.canvas.style.width = this.W + 'px';
     this.canvas.style.height = this.H + 'px';
-    this.vignette = null;
   }
 
   get minZoom() { return Math.max(0.45, Math.min(this.W, this.H) / 1100); }
@@ -99,12 +111,34 @@ export class Renderer {
     }
   }
 
+  private overlayKey = '';
+  private updateOverlay(night: number, dusk: number) {
+    if (!this.overlay) {
+      this.overlay = document.createElement('div');
+      this.overlay.style.cssText = 'position:fixed;inset:0;pointer-events:none;z-index:1;background:radial-gradient(ellipse at 50% 45%, rgba(0,0,0,0) 45%, rgba(14,6,34,0.5) 100%), linear-gradient(rgba(255,180,230,0.06), rgba(40,200,220,0.05))';
+      const tint = document.createElement('div');
+      tint.style.cssText = 'position:absolute;inset:0';
+      this.overlay.appendChild(tint);
+      this.canvas.after(this.overlay);
+    }
+    const a = (0.22 * night * night).toFixed(2), d = (0.07 * dusk).toFixed(2);
+    const key = a + d;
+    if (key === this.overlayKey) return;
+    this.overlayKey = key;
+    (this.overlay.firstChild as HTMLElement).style.background = `linear-gradient(rgba(255,120,160,${d}), rgba(255,120,160,${d})), rgba(28,18,78,${a})`;
+  }
+
   screenToWorld(sx: number, sy: number) {
     return { x: (sx - this.W / 2) / this.cam.zoom + this.cam.x, y: (sy - this.H / 2) / this.cam.zoom + this.cam.y };
   }
 
+  /** section timings (ms, smoothed) for the diagnostic overlay and profiling */
+  perf: Record<string, number> = {};
+  private pt(k: string, t0: number) { const v = performance.now() - t0; this.perf[k] = (this.perf[k] ?? v) * 0.9 + v * 0.1; return performance.now(); }
+
   draw(time: number, dt: number, build: BuildPreview | null) {
     const g = this.game, c = this.c, cam = this.cam;
+    let T = performance.now();
     // camera
     if (this.endingT >= 0) {
       this.endingT += dt;
@@ -140,21 +174,24 @@ export class Renderer {
     const todo: [number, number, number][] = [];
     const w = g.world;
     let missing = 0;
+    const nowMs = performance.now();
     for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
       const key = cy * CHUNKS + cx;
       const has = this.chunks.has(cx, cy);
       if (!has) missing++;
-      if (!has || w.chunkDirty[key]) {
+      // a dirty chunk is repainted at most a few times per second (machines dirty them constantly)
+      if (!has || (w.chunkDirty[key] && nowMs - this.chunks.lastRender(key) > (this.tier >= 2 ? 650 : 350))) {
         const d = ((cx + 0.5) * CPX - p.x) ** 2 + ((cy + 0.5) * CPX - p.y) ** 2;
         todo.push([cx, cy, has ? d : d - 1e12]);
       }
     }
     todo.sort((a, b) => a[2] - b[2]);
     const allow = new Set<number>();
-    const budget = 3 + Math.min(18, missing);
+    // missing chunks first (they would show holes), then at most 1-2 refreshes per frame
+    const budget = missing > 0 ? Math.min(missing + 1, this.tier >= 2 ? 4 : 8) : this.tier >= 2 ? 1 : 2;
     for (let i = 0; i < Math.min(budget, todo.length); i++) allow.add(todo[i][1] * CHUNKS + todo[i][0]);
     c.imageSmoothingEnabled = true;
-    c.imageSmoothingQuality = 'medium';
+    c.imageSmoothingQuality = this.tier >= 1 ? 'low' : 'medium';
     for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
       const cv = this.chunks.get(cx, cy, allow.has(cy * CHUNKS + cx));
       if (!cv) continue;
@@ -163,6 +200,7 @@ export class Renderer {
       c.drawImage(cv, dx0, dy0, dx1 - dx0, dy1 - dy0);
     }
 
+    T = this.pt('chunks', T);
     // ---- world space
     c.setTransform(z, 0, 0, z, ox, oy);
     // hidden discoveries hint
@@ -230,11 +268,13 @@ export class Renderer {
     this.fx.drawFlyers(c);
     this.fx.drawParticles(c, view);
     this.fx.drawDrones(c, time);
+    T = this.pt('world', T);
     this.drawWorldEvent(c, time);
     this.life.drawSky(c, view, time);
     this.fx.drawTexts(c);
 
     if (build) this.drawBuild(build, time);
+    T = this.pt('fx', T);
 
     // ---- screen space post
     c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
@@ -242,11 +282,9 @@ export class Renderer {
     const day = (g.stats.playTime % 180) / 180;
     const night = Math.max(0, Math.cos((day - 0.75) * Math.PI * 2));
     const dusk = Math.max(0, 1 - Math.abs(day - 0.5) / 0.12);
-    if (night > 0.01) { c.fillStyle = `rgba(28,18,78,${0.22 * night * night})`; c.fillRect(0, 0, this.W, this.H); }
-    if (dusk > 0.01) { c.fillStyle = `rgba(255,120,160,${0.07 * dusk})`; c.fillRect(0, 0, this.W, this.H); }
-    if (!this.vignette) this.vignette = this.makeVignette();
-    c.drawImage(this.vignette, 0, 0, this.W, this.H);
+    this.updateOverlay(night, dusk);
     this.drawLocator(time);
+    this.pt('post', T);
   }
 
   private drawBuild(b: BuildPreview, time: number) {
@@ -298,19 +336,6 @@ export class Renderer {
     c.restore();
   }
 
-  private makeVignette() {
-    const cv = document.createElement('canvas');
-    cv.width = Math.max(1, Math.round(this.W / 2)); cv.height = Math.max(1, Math.round(this.H / 2));
-    const c = cv.getContext('2d')!;
-    const W = cv.width, H = cv.height;
-    c.fillStyle = rad(c, W / 2, H * 0.45, Math.min(W, H) * 0.35, Math.max(W, H) * 0.75, [[0, 'rgba(0,0,0,0)'], [1, 'rgba(14,6,34,0.55)']]);
-    c.fillRect(0, 0, W, H);
-    const g2 = c.createLinearGradient(0, 0, 0, H);
-    g2.addColorStop(0, 'rgba(255,180,230,0.06)');
-    g2.addColorStop(1, 'rgba(40,200,220,0.05)');
-    c.fillStyle = g2; c.fillRect(0, 0, W, H);
-    return cv;
-  }
 
   private drawLocator(time: number) {
     const g = this.game, c = this.c;

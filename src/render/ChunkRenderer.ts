@@ -3,7 +3,7 @@ import { hash2, valueNoise } from '../core/rng';
 import { G_ASPHALT, G_DIRT, G_EARTH, G_GRAVEL } from '../data/regions';
 import { World } from '../world/World';
 import { DECO_ROAD_H, DECO_ROAD_V, DECO_RUINWALL } from '../world/worldgen';
-import { GROUND_PERIOD, buildDebris, buildGrime, buildGroundTextures } from './ground';
+import { buildDebris, buildGrime, buildGroundTextures } from './ground';
 import { ctx2d, ellipse, lin, makeCanvas } from './paint';
 import { ItemSprites } from './sprites';
 import { drawProp, propAt } from './props';
@@ -25,18 +25,93 @@ export class ChunkRenderer {
   private items: TileItem[] = [];
   maxCached: number;
   rendersThisFrame = 0;
+  private renderedAt = new Map<number, number>();
+  lastRender(key: number) { return this.renderedAt.get(key) ?? -1e9; }
 
-  constructor(private world: World, private spr: ItemSprites, public RS: number) {
+  /** output resolution of chunk canvases (≤ the art resolution); lower on weak devices */
+  RS: number;
+  private bytesBudget = 0;
+
+  constructor(private world: World, private spr: ItemSprites, public assetRS: number) {
+    const RS = assetRS;
+    this.RS = RS;
     this.ground = buildGroundTextures(RS);
     this.grime = buildGrime(RS);
     this.bloom = makeCanvas(32, 32);
     { const bc = ctx2d(this.bloom); const gr = bc.createRadialGradient(16, 16, 0, 16, 16, 16); gr.addColorStop(0, 'rgba(94,234,212,0.16)'); gr.addColorStop(1, 'rgba(94,234,212,0)'); bc.fillStyle = gr; bc.fillRect(0, 0, 32, 32); }
     this.debris = buildDebris(RS);
     const bytes = CPX * CPX * RS * RS * 4;
-    this.maxCached = Math.max(48, Math.min(260, Math.floor(160e6 / bytes)));
+    // memory: phones and low-RAM machines keep a much smaller chunk cache
+    const mem = (navigator as unknown as { deviceMemory?: number }).deviceMemory ?? 4;
+    const touch = typeof matchMedia !== 'undefined' && matchMedia('(pointer: coarse)').matches;
+    const budget = (touch ? 56e6 : 110e6) * Math.min(1, mem / 4);
+    this.bytesBudget = budget;
+    this.maxCached = Math.max(36, Math.min(200, Math.floor(budget / bytes)));
   }
 
   has(cx: number, cy: number) { return this.cache.has(cy * CHUNKS + cx); }
+
+  private patterns = new Map<number, CanvasPattern>();
+  private groundPattern(c: CanvasRenderingContext2D, g: number): CanvasPattern {
+    let p = this.patterns.get(g);
+    if (!p) {
+      p = c.createPattern(this.ground[g], 'repeat')!;
+      // the textures are RS-times larger than world units
+      p.setTransform(new DOMMatrix().scale(1 / this.assetRS));
+      this.patterns.set(g, p);
+    }
+    return p;
+  }
+
+  private noiseCv: HTMLCanvasElement | null = null;
+  private noiseImg: ImageData | null = null;
+  /** 10x10 px tint map for a chunk (1 px per tile + 1 margin), smoothed when scaled up. */
+  private macroNoise(cx: number, cy: number): HTMLCanvasElement {
+    if (!this.noiseCv) { this.noiseCv = makeCanvas(CHUNK, CHUNK); this.noiseImg = ctx2d(this.noiseCv).createImageData(CHUNK, CHUNK); }
+    const d = this.noiseImg!.data;
+    for (let y = 0; y < CHUNK; y++) for (let x = 0; x < CHUNK; x++) {
+      const v = valueNoise((cx * CHUNK + x) / 5, (cy * CHUNK + y) / 5, 3) - 0.5;
+      const k = (y * CHUNK + x) * 4;
+      if (v > 0) { d[k] = 255; d[k + 1] = 220; d[k + 2] = 255; d[k + 3] = Math.round(v * 0.09 * 255); }
+      else { d[k] = 16; d[k + 1] = 8; d[k + 2] = 40; d[k + 3] = Math.round(-v * 0.16 * 255); }
+    }
+    ctx2d(this.noiseCv).putImageData(this.noiseImg!, 0, 0);
+    return this.noiseCv;
+  }
+
+  /** Grime + debris pre-combined per density step and variant: one draw per dirty tile. */
+  private soil = new Map<number, HTMLCanvasElement>();
+  private soilTile(dens: number, variant: number): HTMLCanvasElement {
+    const step = Math.min(3, Math.floor(dens * 4));
+    const key = step * 16 + variant;
+    let cv = this.soil.get(key);
+    if (!cv) {
+      const d = (step + 0.5) / 4, RS = this.RS;
+      cv = makeCanvas(Math.ceil(60 * RS), Math.ceil(60 * RS));
+      const c = ctx2d(cv);
+      c.globalAlpha = 0.22 + 0.4 * d;
+      c.drawImage(this.grime, 0, 0, 60 * RS, 60 * RS);
+      c.globalAlpha = 0.45 + 0.55 * d;
+      c.drawImage(this.debris[variant], 8 * RS, 8 * RS, 44 * RS, 44 * RS);
+      this.soil.set(key, cv);
+    }
+    return cv;
+  }
+
+  /** Changes the chunk canvas resolution; cached chunks are dropped and repainted progressively. */
+  setOutputScale(rs: number) {
+    rs = Math.min(this.assetRS, Math.max(1, rs));
+    if (Math.abs(rs - this.RS) < 0.01) return;
+    this.RS = rs;
+    for (const key of this.cache.keys()) this.world.chunkDirty[key] = 1;
+    this.cache.clear();
+    this.pool.length = 0;
+    this.soil.clear();
+    this.maxCached = Math.max(36, Math.min(220, Math.floor(this.bytesBudget / (CPX * CPX * rs * rs * 4))));
+  }
+
+  /** lighter chunks on weak devices (set by the renderer) */
+  lite = false;
 
   /** Returns the chunk canvas, rendering it if needed and allowed. */
   get(cx: number, cy: number, allowRender: boolean): HTMLCanvasElement | null {
@@ -60,6 +135,7 @@ export class ChunkRenderer {
     } else this.cache.delete(key);
     this.cache.set(key, cv);
     this.render(cx, cy, cv);
+    this.renderedAt.set(key, performance.now());
     this.world.chunkDirty[key] = 0;
     this.rendersThisFrame++;
     return cv;
@@ -73,20 +149,25 @@ export class ChunkRenderer {
     c.setTransform(RS, 0, 0, RS, -ox * RS, -oy * RS);
     c.imageSmoothingEnabled = true;
     const tx0 = cx * CHUNK, ty0 = cy * CHUNK;
-    // ground
+    // ground: one pattern fill per ground type (instead of one draw per tile)
+    const groups = new Map<number, number[]>();
     for (let ty = ty0; ty < ty0 + CHUNK; ty++) for (let tx = tx0; tx < tx0 + CHUNK; tx++) {
       const i = tileIndex(tx, ty);
       let g = w.ground[i];
       // natural soil all heals into the same lush ground once clean
       if ((g === G_DIRT || g === G_GRAVEL) && w.garbage[i] === 0) g = G_EARTH;
-      const tex = this.ground[g];
-      const sx = ((tx * TILE) % GROUND_PERIOD) * RS, sy = ((ty * TILE) % GROUND_PERIOD) * RS;
-      c.drawImage(tex, sx, sy, TILE * RS, TILE * RS, tx * TILE, ty * TILE, TILE, TILE);
-      // macro variation
-      const v = valueNoise(tx / 5, ty / 5, 3) - 0.5;
-      c.fillStyle = v > 0 ? `rgba(255,220,255,${v * 0.09})` : `rgba(16,8,40,${-v * 0.16})`;
-      c.fillRect(tx * TILE, ty * TILE, TILE, TILE);
+      let list = groups.get(g);
+      if (!list) groups.set(g, (list = []));
+      list.push(tx, ty);
     }
+    for (const [g, list] of groups) {
+      c.fillStyle = this.groundPattern(c, g);
+      c.beginPath();
+      for (let k = 0; k < list.length; k += 2) c.rect(list[k] * TILE, list[k + 1] * TILE, TILE, TILE);
+      c.fill();
+    }
+    // macro light/dark variation as one smooth upscaled overlay
+    c.drawImage(this.macroNoise(cx, cy), ox, oy, CPX, CPX);
     // road markings & ruins on the ground
     for (let ty = ty0; ty < ty0 + CHUNK; ty++) for (let tx = tx0; tx < tx0 + CHUNK; tx++) {
       const i = tileIndex(tx, ty);
@@ -135,12 +216,8 @@ export class ChunkRenderer {
         if (w.initial[i] > 0) { c.globalAlpha = 0.07; c.drawImage(this.grime, (tx + 0.5) * TILE - 24, (ty + 0.5) * TILE - 24, 48, 48); }
         continue;
       }
-      const dens = Math.min(1, g / 40);
-      c.globalAlpha = 0.22 + 0.4 * dens;
-      c.drawImage(this.grime, (tx + 0.5) * TILE - 30, (ty + 0.5) * TILE - 30, 60, 60);
-      c.globalAlpha = 0.45 + 0.55 * dens;
-      const dk = this.debris[Math.floor(hash2(tx, ty, 8) * this.debris.length)];
-      c.drawImage(dk, (tx + 0.5) * TILE - 22, (ty + 0.5) * TILE - 22, 44, 44);
+      c.globalAlpha = 1;
+      c.drawImage(this.soilTile(Math.min(1, g / 40), Math.floor(hash2(tx, ty, 8) * this.debris.length)), (tx + 0.5) * TILE - 30, (ty + 0.5) * TILE - 30, 60, 60);
     }
     c.globalAlpha = 1;
     // ruin walls (low, 3/4)
@@ -172,7 +249,12 @@ export class ChunkRenderer {
       const g = w.garbage[i];
       if (!g) continue;
       const k = visibleK(g, w.initial[i]);
-      genTileItems(w.region[i], tx, ty, w.initial[i], items, 0, k);
+      if (this.lite && k > 4) {
+        // lite: skip the buried middle layers (mostly hidden anyway), keep the mound and the visible top
+        const skip = Math.floor(k * 0.25);
+        if (w.initial[i] >= 34) genTileItems(w.region[i], tx, ty, w.initial[i], items, 0, 1);
+        genTileItems(w.region[i], tx, ty, w.initial[i], items, Math.max(1, skip), k);
+      } else genTileItems(w.region[i], tx, ty, w.initial[i], items, 0, k);
     }
     items.sort((a, b) => a.layer - b.layer || a.y - b.y || a.order - b.order);
     c.save();
@@ -190,7 +272,7 @@ export class ChunkRenderer {
       c.globalAlpha = 1;
     };
     for (const it of items) {
-      if (it.layer > 0 && shadeLayer < it.layer) {
+      if (!this.lite && it.layer > 0 && shadeLayer < it.layer) {
         sinkShade(it.layer === 1 ? 0.28 : 0.16);
         shadeLayer = it.layer;
       }

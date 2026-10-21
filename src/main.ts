@@ -14,7 +14,7 @@ import { drawWorker } from './render/character';
 import { UI } from './ui/UI';
 import './ui/style.css';
 
-interface Settings { music: number; sfx: number; quality: number; ranges: boolean }
+interface Settings { music: number; sfx: number; quality: number; ranges: boolean; gfx?: 'auto' | 'high' | 'low' }
 const SETTINGS_KEY = 'garbage-kingdom-settings';
 
 interface BuildState extends BuildPreview { painting: boolean; lastTx: number; lastTy: number; placedId: number; /** touch gesture in progress: dragging the ghost itself, or panning the camera */
@@ -42,9 +42,34 @@ export class App implements PointerSink {
   private time = 0;
   private last = performance.now();
   private saveT = 0;
-  private fpsAcc = 0;
-  private fpsN = 0;
   private debugEl: HTMLElement | null = null;
+  private qWin = { ms: 0, n: 0, work: 0, good: 0, drops: [0, 0, 0, 0] };
+  /** time spent in the last frame's update+draw (excludes waiting for vsync) */
+  private workMs = 0;
+
+  /** Adaptive quality: lowers render resolution/effects when frames are slow, raises them back when there is headroom. */
+  private governQuality(rawMs: number) {
+    const r = this.renderer;
+    const mode = this.settings.gfx ?? 'auto';
+    const fixed = mode === 'low' ? 3 : mode === 'high' ? 0 : -1;
+    if (fixed >= 0) { if (r.tier !== fixed) this.applyTier(fixed); return; }
+    if (document.hidden || !(rawMs > 0) || rawMs > 700) return; // ignore stalls and hidden tabs
+    const w = this.qWin;
+    w.ms += rawMs; w.n++; w.work += this.workMs;
+    if (w.ms < 2000) return;
+    const avg = w.ms / w.n, work = w.work / w.n;
+    w.ms = 0; w.n = 0; w.work = 0;
+    if (avg > 24 && r.tier < 3) { w.drops[r.tier]++; w.good = 0; this.applyTier(r.tier + 1); return; }
+    // climb back only with clear headroom, and give up on a tier that keeps failing
+    // (frame interval can't go below the screen refresh, so headroom is judged by the work per frame)
+    if (avg < 20 && work < 7 && r.tier > 0 && w.drops[r.tier - 1] < 2) { if (++w.good >= 3) { w.good = 0; this.applyTier(r.tier - 1); } }
+    else w.good = 0;
+  }
+
+  private applyTier(t: number) {
+    this.renderer.setTier(t);
+    this.fx.quality = t >= 2 ? Math.min(0.5, this.settings.quality) : this.settings.quality;
+  }
   private debugT = 0;
 
   constructor() {
@@ -70,6 +95,9 @@ export class App implements PointerSink {
     this.renderer.cam.targetZoom = this.renderer.cam.zoom = this.defaultZoom();
     window.addEventListener('orientationchange', () => setTimeout(() => { this.renderer.resize(); this.renderer.cam.targetZoom = this.defaultZoom(); }, 300));
     this.applySettings();
+    // weak hardware starts light; the governor raises quality if there is headroom
+    const nav = navigator as unknown as { hardwareConcurrency?: number; deviceMemory?: number };
+    if ((this.settings.gfx ?? 'auto') === 'auto' && ((nav.hardwareConcurrency ?? 8) <= 4 || (nav.deviceMemory ?? 8) <= 3)) this.applyTier(2);
 
     if (load.error) console.warn('Save inválido, começando um novo jogo:', load.error);
     if (load.ok && load.elapsed > 30) {
@@ -428,7 +456,9 @@ export class App implements PointerSink {
   // --------------------------------------------------------------- loop
   private frame(now: number) {
     requestAnimationFrame((t) => this.frame(t));
+    const tw = performance.now();
     try { this.step(now); } catch (e) { this.reportError(e); }
+    this.workMs = performance.now() - tw;
   }
 
   toggleDebug() {
@@ -444,17 +474,12 @@ export class App implements PointerSink {
     // own clock: some browsers hand rAF timestamps in a different time base
     const now = performance.now();
     let dt = (now - this.last) / 1000;
+    const rawMs = now - this.last;
     if (!Number.isFinite(dt) || dt < 0) dt = 0.016;
     dt = Math.min(0.05, dt);
     this.last = now;
     this.time += dt;
-    this.fpsAcc += dt; this.fpsN++;
-    if (this.fpsAcc > 2) {
-      const fps = this.fpsN / this.fpsAcc;
-      // graceful degradation on slow devices
-      if (fps < 40 && this.fx.quality > 0.5) this.fx.quality = 0.5;
-      this.fpsAcc = 0; this.fpsN = 0;
-    }
+    this.governQuality(rawMs);
     const g = this.game;
     const blocked = !this.started || this.ui.popupOpen || !!this.ui.modalTab;
     const inp = this.input;
@@ -471,8 +496,10 @@ export class App implements PointerSink {
       aim,
     };
     try {
+      const t0 = performance.now();
       if (this.started) g.update(dt, state);
       else g.update(dt, { moveX: 0, moveY: 0, collect: false, interact: false, aim: null });
+      this.renderer.perf.update = (this.renderer.perf.update ?? 0) * 0.9 + (performance.now() - t0) * 0.1;
     } catch (e) { this.reportError(e); }
     if (this.debugEl && (this.debugT -= dt) <= 0) {
       this.debugT = 0.2;
@@ -484,6 +511,7 @@ export class App implements PointerSink {
         `joy on ${j.on} id ${j.id} x ${f(j.x)} y ${f(j.y)} · dedos ${inp.pointers.size}`,
         `entrada ${f(mx)}, ${f(my)} · dt ${f(dt * 1000)}ms`,
         `jogador ${f(p.tx)}, ${f(p.ty)} · vel ${f(p.vx)}, ${f(p.vy)} · speed ${f(g.d.moveSpeed)}`,
+        `gráficos nível ${this.renderer.tier} · dpr ${this.renderer.dpr} · ${Object.entries(this.renderer.perf).map(([k, v]) => `${k} ${v.toFixed(1)}`).join(' ')}`,
         `andando ${p.moving} · fantasma ${f(g.ghostT)} · ${navigator.userAgent.slice(0, 90)}`,
       ].join('\n');
     }
@@ -518,7 +546,9 @@ export class App implements PointerSink {
     try { this.renderer.draw(this.time, dt, this.build); } catch (e) { this.reportError(e); }
     if (this.build) this.ui.positionBuildOverlay();
     this.ui.updatePointers();
+    const tu = performance.now();
     try { this.ui.update(dt); } catch (e) { this.reportError(e); }
+    this.renderer.perf.ui = (this.renderer.perf.ui ?? 0) * 0.9 + (performance.now() - tu) * 0.1;
     this.saveT += dt;
     if (this.saveT > 15 && this.started) { this.saveT = 0; this.save(); }
   }
