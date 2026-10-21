@@ -124,6 +124,7 @@ export function applySave(g: Game, raw: unknown): void {
   g.milestone = Math.max(0, Math.floor(num(s.milestone)));
   g.ended = !!s.ended;
   g.recompute();
+  g.syncSectors();
 }
 
 export class SaveManager {

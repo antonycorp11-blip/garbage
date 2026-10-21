@@ -22,9 +22,11 @@ interface BuildState extends BuildPreview { painting: boolean; lastTx: number; l
   /** build camera (touch): free to pan independently from the player */
   cam: { x: number; y: number };
   /** suggested places, best first */
-  spots: { tx: number; ty: number; garbage: number; service: boolean }[];
+  spots: { tx: number; ty: number; garbage: number; service: boolean; mat: number }[];
   /** garbage within reach of the ghost */
-  reach: number; moving: { level: number; fromTx: number; fromTy: number; fromDir: number } | null }
+  reach: number;
+  /** material mix within reach (fractions) */
+  mix?: number[]; moving: { level: number; fromTx: number; fromTy: number; fromDir: number } | null }
 
 export class App implements PointerSink {
   game: Game;
@@ -187,7 +189,8 @@ export class App implements PointerSink {
     const b = this.build;
     if (!b) return;
     b.problem = this.game.placeProblem(b.type, b.tx, b.ty) ?? (b.moving ? null : this.game.missingFor(this.game.machineCost(b.type)));
-    b.reach = this.game.reachGarbage(b.type, b.tx, b.ty, MACHINES[b.type].radius > 8 ? 2 : 1);
+    b.mix = [0, 0, 0, 0, 0];
+    b.reach = this.game.reachGarbage(b.type, b.tx, b.ty, MACHINES[b.type].radius > 8 ? 2 : 1, b.mix);
   }
 
   /** Move the ghost to a suggested spot (and the camera with it). */

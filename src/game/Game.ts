@@ -5,6 +5,10 @@ import { BUILD_ORDER, MACHINES, MAX_MACHINE_LEVEL, MachineType, machineUpgradeCo
 import { MATERIALS, MAT_COUNT, M_ELEC, M_METAL, M_RARE, emptyMats, sumMats } from '../data/materials';
 import { CONTRACT_LINES, INTRO, MAE, MILESTONES, RANDOM_MESSAGES, RARE_FINDS, SENDER, STORY, STORY_SENDER, TV_ADS } from '../data/messages';
 import { Contract, ContractBoard, ContractHost, DAY } from './Contracts';
+import { REGIONS } from '../data/regions';
+
+const SECTOR = 16;
+export const SECTORS = WORLD_TILES / SECTOR;
 import { DEFAULT_LOADOUT, MODULE_MAP, ModuleSlot } from '../data/modules';
 import { TOOLS } from '../data/tools';
 import { UPGRADES, UPGRADE_MAP, upgradeCost } from '../data/upgrades';
@@ -33,7 +37,8 @@ export type GameEvent =
   | { type: 'offline'; seconds: number; removed: number }
   | { type: 'changed' }
   | { type: 'contract'; ok: boolean; title: string; money: number; blueprint: string | null }
-  | { type: 'offers' };
+  | { type: 'offers' }
+  | { type: 'sector'; name: string; money: number };
 
 export interface SpecialState { revealed: boolean; opened: boolean; progress: number }
 
@@ -79,6 +84,10 @@ export class Game {
   /** next STORY beat to tell */
   storyStep = 0;
   private teleportT = 0;
+  /** 16x16-tile sectors; a sector is "restored" when almost all its junk is gone */
+  readonly sectorsDone = new Uint8Array(SECTORS * SECTORS);
+  private sectorInit = new Float64Array(SECTORS * SECTORS);
+  private sectorT = 0;
   private contractT = 0;
   private warned = new Set<number>();
   readonly contractHost: ContractHost = {
@@ -136,6 +145,11 @@ export class Game {
     this.specials = this.world.specials.map(() => ({ revealed: false, opened: false, progress: 0 }));
     this.depot = this.machines.create('depot', DEPOT.tx, DEPOT.ty);
     this.lastRemaining = this.world.remaining;
+    for (let i = 0; i < this.world.initial.length; i++) {
+      const tx = i % WORLD_TILES, ty = (i / WORLD_TILES) | 0;
+      this.sectorInit[((ty / SECTOR) | 0) * SECTORS + ((tx / SECTOR) | 0)] += this.world.initial[i];
+    }
+    for (let k = 0; k < this.sectorInit.length; k++) if (this.sectorInit[k] < 300) this.sectorsDone[k] = 1;
     const g = this;
     (this as { contractHost: ContractHost }).contractHost = {
       get playTime() { return g.stats.playTime; },
@@ -149,6 +163,48 @@ export class Game {
   get avgRate() {
     const h = this.rateHistory;
     return h.length ? h.reduce((a, b) => a + b, 0) / h.length : 0;
+  }
+
+  sectorLeft(k: number) {
+    const per = SECTOR / CHUNK, sx = k % SECTORS, sy = (k / SECTORS) | 0;
+    let left = 0;
+    for (let y = 0; y < per; y++) for (let x = 0; x < per; x++) left += this.world.chunkRemaining[(sy * per + y) * CHUNKS + sx * per + x];
+    return left;
+  }
+
+  sectorName(k: number) {
+    const sx = k % SECTORS, sy = (k / SECTORS) | 0;
+    const r = this.world.region[tileIndex(Math.min(WORLD_TILES - 1, sx * SECTOR + SECTOR / 2), Math.min(WORLD_TILES - 1, sy * SECTOR + SECTOR / 2))];
+    return `Setor ${String.fromCharCode(65 + sx)}${sy + 1} · ${REGIONS[r].name}`;
+  }
+
+  /** Marks already-clean sectors as restored without rewards (after loading a save). */
+  syncSectors() {
+    for (let k = 0; k < this.sectorsDone.length; k++) if (!this.sectorsDone[k] && this.sectorLeft(k) <= this.sectorInit[k] * 0.03) this.sectorsDone[k] = 1;
+  }
+
+  sectorProgress(k: number) {
+    const init = this.sectorInit[k];
+    return init > 0 ? 1 - this.sectorLeft(k) / init : 1;
+  }
+
+  private updateSectors(dt: number) {
+    this.sectorT -= dt;
+    if (this.sectorT > 0) return;
+    this.sectorT = 1;
+    for (let k = 0; k < this.sectorsDone.length; k++) {
+      if (this.sectorsDone[k]) continue;
+      const init = this.sectorInit[k];
+      if (this.sectorLeft(k) > init * 0.03) continue;
+      this.sectorsDone[k] = 1;
+      const money = Math.round(init * 1.2 * (1 + 0.15 * this.contracts.level));
+      this.earn(money);
+      const sx = k % SECTORS, sy = (k / SECTORS) | 0;
+      const cx = (sx + 0.5) * SECTOR * TILE, cy = (sy + 0.5) * SECTOR * TILE;
+      if (this.isVisible(cx, cy)) this.fx.burst(cx, cy, 'unlock', 40);
+      this.fx.sound('milestone');
+      this.events.push({ type: 'sector', name: this.sectorName(k), money });
+    }
   }
 
   /** planet day (1-based) and hour */
@@ -510,7 +566,7 @@ export class Game {
   }
 
   /** Garbage a machine placed at (tx, ty) would have within reach. */
-  reachGarbage(type: MachineType, tx: number, ty: number, step = 1): number {
+  reachGarbage(type: MachineType, tx: number, ty: number, step = 1, mix?: number[]): number {
     const def = MACHINES[type];
     const reach = def.radius > 0 && !isHub(type) ? def.radius * this.d.machineRadiusMult : 0;
     if (reach <= 0) return 0;
@@ -520,8 +576,17 @@ export class Game {
     for (let yy = -rr; yy <= rr; yy += step) for (let xx = -rr; xx <= rr; xx += step) {
       if (xx * xx + yy * yy > reach * reach) continue;
       const x = Math.floor(cx + xx), y = Math.floor(cy + yy);
-      if (inWorld(x, y)) g += def.heavy ? w.garbage[tileIndex(x, y)] : w.lightAvailable(tileIndex(x, y));
+      if (!inWorld(x, y)) continue;
+      const i = tileIndex(x, y);
+      const n = def.heavy ? w.garbage[i] : w.lightAvailable(i);
+      g += n;
+      if (mix && n > 0) {
+        const rw = REGIONS[w.region[i]].mats;
+        const tot = rw[0] + rw[1] + rw[2] + rw[3] + rw[4];
+        for (let k = 0; k < 5; k++) mix[k] += (n * rw[k]) / tot;
+      }
     }
+    if (mix) { const t = mix.reduce((a, b) => a + b, 0); if (t > 0) for (let k = 0; k < mix.length; k++) mix[k] /= t; }
     return g * step * step;
   }
 
@@ -531,35 +596,46 @@ export class Game {
   }
 
   /** Best valid places for a machine near a point, spread apart, best first. */
-  findSpots(type: MachineType, fromX: number, fromY: number, n: number): { tx: number; ty: number; garbage: number; service: boolean }[] {
+  findSpots(type: MachineType, fromX: number, fromY: number, n: number): { tx: number; ty: number; garbage: number; service: boolean; mat: number }[] {
     const def = MACHINES[type];
     const s = def.size;
     const R = 16;
     const reach = def.radius > 0 && !isHub(type) ? def.radius * this.d.machineRadiusMult : 0;
     const step = reach > 8 ? 2 : 1;
-    const cands: { tx: number; ty: number; garbage: number; service: boolean; score: number }[] = [];
+    const cands: { tx: number; ty: number; garbage: number; service: boolean; score: number; mat: number }[] = [];
+    // spots rich in what the active contracts still need score better
+    const need = this.contracts.needs().slice(0, 5);
+    const needTot = need.reduce((a, b) => a + b, 0);
+    const mix = [0, 0, 0, 0, 0];
     for (let y = Math.floor(fromY) - R; y <= Math.floor(fromY) + R; y++) for (let x = Math.floor(fromX) - R; x <= Math.floor(fromX) + R; x++) {
       const d = Math.hypot(x + s / 2 - fromX, y + s / 2 - fromY);
       if (d > R) continue;
       if (this.placeProblem(type, x, y)) continue;
       let score = d * 0.45;
       let g = 0;
+      let mat = -1;
       if (reach > 0) {
-        g = this.reachGarbage(type, x, y, step);
+        mix.fill(0);
+        g = this.reachGarbage(type, x, y, step, mix);
         if (g === 0) continue;
         score -= Math.log(1 + g) * 2.2;
+        if (needTot > 0) {
+          let fit = 0, best = 0;
+          for (let k = 0; k < 5; k++) { const v = mix[k] * (need[k] / needTot); fit += v; if (v > best) { best = v; mat = k; } }
+          score -= fit * 6;
+        }
       }
       const service = this.inServiceArea(type, x, y);
       if (type !== 'conveyor' && type !== 'separator' && type !== 'recycler' && !service) score += 3.5;
-      cands.push({ tx: x, ty: y, garbage: g, service, score });
+      cands.push({ tx: x, ty: y, garbage: g, service, score, mat });
     }
     cands.sort((a, b) => a.score - b.score);
-    const out: { tx: number; ty: number; garbage: number; service: boolean }[] = [];
+    const out: { tx: number; ty: number; garbage: number; service: boolean; mat: number }[] = [];
     const gap = Math.max(3, reach * 1.2, s + 1);
     for (const c of cands) {
       if (out.length >= n) break;
       if (out.some((o) => Math.hypot(o.tx - c.tx, o.ty - c.ty) < gap)) continue;
-      out.push({ tx: c.tx, ty: c.ty, garbage: c.garbage, service: c.service });
+      out.push({ tx: c.tx, ty: c.ty, garbage: c.garbage, service: c.service, mat: c.mat });
     }
     return out;
   }
@@ -796,6 +872,7 @@ export class Game {
     this.updateDiscoveries(dt);
     this.updateMeta(dt);
     this.updateContracts(dt);
+    this.updateSectors(dt);
     this.updateTeleport(dt);
   }
 

@@ -9,7 +9,7 @@ import { DAY } from '../game/Contracts';
 import { G_ASPHALT, G_CONCRETE, G_EARTH, G_GRAVEL, G_RUINFLOOR } from '../data/regions';
 import { TOOLS } from '../data/tools';
 import { UPGRADES, UPGRADE_MAP } from '../data/upgrades';
-import { Game, GameEvent } from '../game/Game';
+import { Game, GameEvent, SECTORS } from '../game/Game';
 import { Machine, botCount, centerX, centerY, hubRadius, isBelt, isHub, machineBufferCap, machineRadius, machineRate } from '../game/Machines';
 import { drawTool, drawWorker } from '../render/character';
 import { drawBelt, drawMachine } from '../render/machinesDraw';
@@ -189,6 +189,7 @@ export class UI {
       case 'discovery': this.discoveryPopup(e.special); break;
       case 'openInventory': this.openModal('inventory'); break;
       case 'offers': this.newOffers = true; if (this.modalTab === 'contracts') this.renderModal(true); else this.message('Novas propostas de contrato chegaram. Toque em Contratos.', MAE); break;
+      case 'sector': this.sectorBanner(e.name, e.money); break;
       case 'contract': this.contractBanner(e.ok, e.title, e.money, e.blueprint); if (this.modalTab === 'contracts') this.renderModal(true); break;
       case 'openMachine': this.select(this.game.machines.byId.get(e.id) ?? null); break;
       case 'ending': this.endingPopup(); break;
@@ -254,7 +255,7 @@ export class UI {
     // suggested spots + the chip that rides above the ghost
     const layer = h(`<div class="spots"></div>`);
     b.spots.forEach((sp, i) => {
-      const pin = h(`<button class="spot-pin" data-i="${i}"><span class="st">⭐</span>${sp.garbage > 0 ? `<span class="g">${fmtShort(sp.garbage)}</span>` : ''}</button>`);
+      const pin = h(`<button class="spot-pin" data-i="${i}"><span class="st">⭐</span>${sp.garbage > 0 ? `<span class="g">${fmtShort(sp.garbage)}</span>` : ''}${sp.mat >= 0 ? `<i class="pm" style="background:${MATERIALS[sp.mat].color}" title="bom para o contrato: ${MATERIALS[sp.mat].name}"></i>` : ''}</button>`);
       pin.addEventListener('click', (e) => { e.stopPropagation(); this.app.jumpToSpot(i); });
       layer.appendChild(pin);
     });
@@ -305,6 +306,15 @@ export class UI {
       else { tip = `✓ ${reach ? reach + ' · ' : ''}entrega sozinha no posto`; chip = reach ? '✓ ' + fmtShort(b.reach) : '✓'; }
     }
     if (msg) { msg.textContent = tip; msg.className = 'bb-msg ' + cls; }
+    // what this spot yields: material mix bar (helps with contracts)
+    let mixEl = bar.querySelector('.bb-mix') as HTMLElement | null;
+    const mix = def.role === 'coleta' && b.reach > 0 ? b.mix : null;
+    if (!mixEl && msg) { mixEl = h(`<div class="bb-mix"></div>`); msg.after(mixEl); }
+    if (mixEl) {
+      const html = mix ? mix.map((f, k) => (f > 0.04 ? `<i style="flex:${f.toFixed(3)};background:${MATERIALS[k].color}" title="${MATERIALS[k].name}">${f > 0.16 ? MATERIALS[k].name.split(' ')[0] : ''}</i>` : '')).join('') : '';
+      if (mixEl.innerHTML !== html) mixEl.innerHTML = html;
+      mixEl.style.display = mix ? '' : 'none';
+    }
     if (this.ghostChip) { this.ghostChip.textContent = chip; this.ghostChip.className = 'ghost-chip ' + cls; }
     const ok = bar.querySelector('[data-a=ok]') as HTMLElement | null;
     if (ok) ok.classList.toggle('disabled', !!b.problem);
@@ -647,6 +657,13 @@ export class UI {
     setTimeout(() => b.remove(), 4200);
   }
 
+  private sectorBanner(name: string, money: number) {
+    const b = h(`<div class="cbanner sector"><div class="k">SETOR RESTAURADO!</div><div class="t">${esc(name)} · os Glubs voltaram</div><div class="r"><span>+${fmtMoney(money)}</span></div></div>`);
+    this.root.appendChild(b);
+    setTimeout(() => b.classList.add('out'), 3000);
+    setTimeout(() => b.remove(), 3600);
+  }
+
   private reqRows(req: number[], delivered: number[] | null) {
     const g = this.game;
     let html = '';
@@ -869,6 +886,15 @@ export class UI {
     c.imageSmoothingEnabled = false;
     c.drawImage(this.mapCanvas, 0, 0, 576, 576);
     const k = 576 / WORLD_TILES;
+    // restored sectors glow; the rest show how far along they are
+    const sk = (WORLD_TILES / SECTORS) * k;
+    c.lineWidth = 1;
+    for (let q = 0; q < SECTORS * SECTORS; q++) {
+      const sx = (q % SECTORS) * sk, sy = Math.floor(q / SECTORS) * sk;
+      if (g.sectorsDone[q]) { c.fillStyle = 'rgba(94,234,212,0.16)'; c.fillRect(sx, sy, sk, sk); }
+      c.strokeStyle = g.sectorsDone[q] ? 'rgba(94,234,212,0.55)' : 'rgba(255,255,255,0.07)';
+      c.strokeRect(sx + 0.5, sy + 0.5, sk - 1, sk - 1);
+    }
     // camera rect
     const v = g.view;
     c.strokeStyle = 'rgba(255,255,255,0.6)'; c.lineWidth = 1.5;
