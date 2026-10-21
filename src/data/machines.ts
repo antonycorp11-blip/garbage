@@ -73,7 +73,7 @@ export const MACHINES: Record<MachineType, MachineDef> = {
   excavator: {
     ...D, type: 'excavator', name: 'Mineradora Rotativa', short: 'Mineradora', role: 'coleta', size: 2, money: 120000, mats: [0, 2500, 0, 0, 400, 0], costGrowth: 1.4,
     rate: 45, radius: 24, buffer: 5000, heavy: true, unlock: 'a_excav', solid: true, buildable: true,
-    func: 'Demole as montanhas mais densas, inclusive o entulho pesado, em alta velocidade.',
+    func: 'Demole as montanhas mais densas, inclusive a sucata pesada, em alta velocidade.',
     desc: 'Vai direto nas maiores pilhas da área. Gera tanto material que vai precisar de esteiras e trituradores.',
   },
   recycler: {
