@@ -46,6 +46,8 @@ export class App implements PointerSink {
   private qWin = { ms: 0, n: 0, work: 0, good: 0, drops: [0, 0, 0, 0] };
   /** time spent in the last frame's update+draw (excludes waiting for vsync) */
   private workMs = 0;
+  private frameN = 0;
+  private drawDt = 0;
 
   /** Adaptive quality: lowers render resolution/effects when frames are slow, raises them back when there is headroom. */
   private governQuality(rawMs: number) {
@@ -543,7 +545,11 @@ export class App implements PointerSink {
     } else this.renderer.focus = null;
     this.fx.update(dt);
     this.renderer.chunks.rendersThisFrame = 0;
-    try { this.renderer.draw(this.time, dt, this.build); } catch (e) { this.reportError(e); }
+    // lightest tier: draw the world at 30 fps (the game itself still updates every frame)
+    this.frameN++;
+    const skipDraw = this.renderer.tier >= 3 && (this.frameN & 1) === 1 && !this.build;
+    if (!skipDraw) { try { this.renderer.draw(this.time, this.drawDt + dt, this.build); } catch (e) { this.reportError(e); } this.drawDt = 0; }
+    else this.drawDt += dt;
     if (this.build) this.ui.positionBuildOverlay();
     this.ui.updatePointers();
     const tu = performance.now();
