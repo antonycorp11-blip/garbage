@@ -267,6 +267,12 @@ export class UI {
     this.positionBuildOverlay();
   }
 
+  /** Screen y where the build bar starts (edge scrolling stops above it). */
+  buildBarTop() {
+    const r = this.el.buildbar.getBoundingClientRect();
+    return r.height > 0 ? r.top : window.innerHeight;
+  }
+
   /** Keeps the spot pins and the ghost chip glued to the world (called every frame). */
   positionBuildOverlay() {
     const b = this.app.build, layer = this.spotLayer;

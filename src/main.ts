@@ -483,7 +483,8 @@ export class App implements PointerSink {
         if (gr && gr.mode === 'ghost' && !b.painting) {
           const m = 56, sp = 420 * dt / this.renderer.cam.zoom;
           const ex = gr.x < m ? -1 : gr.x > this.renderer.W - m ? 1 : 0;
-          const ey = gr.y < m + 40 ? -1 : gr.y > this.renderer.H - m - 150 ? 1 : 0;
+          const barTop = this.ui.buildBarTop();
+          const ey = gr.y < m ? -1 : gr.y > barTop - 36 ? 1 : 0;
           if (ex || ey) { b.cam.x += ex * sp; b.cam.y += ey * sp; this.dragGhost(); }
         }
         const c = this.renderer.clampView(b.cam.x, b.cam.y);
