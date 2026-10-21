@@ -337,7 +337,8 @@ function drawArm(c: C, m: Machine, x: number, y: number, time: number, working: 
   const open = holding ? 0.15 : 0.7;
   c.save(); c.translate(ex, ey);
   if (holding) {
-    const k = (m.id + Math.floor(time * 0.9 + m.id * 0.13)) % CHUNK_COLS.length;
+    const colorIndex = m.id + Math.floor(time * 0.9 + m.id * 0.13);
+    const k = ((colorIndex % CHUNK_COLS.length) + CHUNK_COLS.length) % CHUNK_COLS.length;
     gem(c, 0, 6.5, 4.6, CHUNK_COLS[k], 0.4);
     gem(c, 3, 8, 2.6, shade(CHUNK_COLS[k], -0.15), -0.3);
   }

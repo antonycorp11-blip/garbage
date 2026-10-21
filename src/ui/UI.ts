@@ -521,7 +521,7 @@ export class UI {
     c.translate(210, 230);
     c.scale(sc, sc);
     c.translate(-(size * TILE) / 2, -(size * TILE) / 2);
-    const fake: Machine = { id: -1, type, tx: 0, ty: 0, dir: 0, level: 1, buffer: [0, 0, 0, 0, 0, 0], bufferTotal: 0, work: 0, cursor: 0, collected: 0, belt: [{ mat: 0, units: 1, sorted: false, t: 0.5 }], bots: [], status: 'working', targets: null, targetsRadius: 0, anim: 0, lastTarget: -1, outConveyor: -1, inService: false, linked: true, deliverT: 0, built: 1 };
+    const fake: Machine = { id: 0, type, tx: 0, ty: 0, dir: 0, level: 1, buffer: [0, 0, 0, 0, 0, 0], bufferTotal: 0, work: 0, cursor: 0, collected: 0, belt: [{ mat: 0, units: 1, sorted: false, t: 0.5 }], bots: [], status: 'working', targets: null, targetsRadius: 0, anim: 0, lastTarget: -1, outConveyor: -1, inService: false, linked: true, deliverT: 0, built: 1 };
     if (isBelt(type)) drawBelt(c, fake, this.game, 0.3);
     else drawMachine(c, fake, this.game, 0.3, this.app.fx, false);
     const px = c.getImageData(0, 0, 420, 420).data;
