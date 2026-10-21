@@ -171,8 +171,9 @@ export class Game {
   /** Idle collectors drive themselves to the nearest junk in their zone. */
   private updateRoamers() {
     for (const m of this.machines.machines) {
-      if (m.type !== 'collector' || m.idleT < 2 || m.outConveyor >= 0 || m.ox || m.oy) continue;
+      if (m.type !== 'collector' || m.idleT < 2 || m.ox || m.oy) continue;
       m.idleT = 0;
+      if (m.outConveyor >= 0) { this.roamWithBelts(m); continue; }
       const spot = this.roamSpot(m);
       // nothing left in the zone: look again much later
       if (!spot) { m.idleT = -12; continue; }
@@ -181,9 +182,74 @@ export class Game {
     }
   }
 
+  private beltWarnT = 0;
+
+  /** Belts that only exist to serve this machine: its output belt and what follows until another line joins. */
+  private privateBelts(m: Machine): Machine[] {
+    const out: Machine[] = [];
+    let cur = m.outConveyor >= 0 ? this.machines.byId.get(m.outConveyor) : undefined;
+    const seen = new Set<number>();
+    while (cur && cur.type === 'conveyor' && !seen.has(cur.id)) {
+      seen.add(cur.id);
+      // anything else feeding this belt (another belt or machine) makes it shared
+      let feeders = 0;
+      for (let d = 0; d < 4; d++) {
+        const o = this.machines.at(cur.tx + DX[d], cur.ty + DY[d]);
+        if (!o || o.id === m.id) continue;
+        if ((o.type === 'conveyor' || o.type === 'separator') && o.tx + DX[o.dir] === cur.tx && o.ty + DY[o.dir] === cur.ty && !seen.has(o.id)) feeders++;
+        else if (o.outConveyor === cur.id) feeders++;
+      }
+      if (feeders > 0) break;
+      out.push(cur);
+      cur = this.machines.at(cur.tx + DX[cur.dir], cur.ty + DY[cur.dir]);
+    }
+    return out;
+  }
+
+  /** A belt-fed collector moves on and its private belts are rebuilt to the new spot (old ones refunded). */
+  private roamWithBelts(m: Machine) {
+    const spot = this.roamSpot(m);
+    if (!spot) { m.idleT = -12; return; }
+    const unit = this.machineCost('conveyor');
+    const old = this.privateBelts(m).map((b) => ({ id: b.id, tx: b.tx, ty: b.ty, dir: b.dir, belt: b.belt }));
+    const fromX = m.tx, fromY = m.ty;
+    for (const o of old) this.machines.remove(this.machines.byId.get(o.id)!);
+    this.machines.relocate(m, spot.tx, spot.ty);
+    this.machines.relink();
+    // already delivering at the new spot (depot circle or touching a working line): no new belts
+    const direct = m.inService || (m.outConveyor >= 0 && m.linked);
+    const plan = direct ? { tiles: [] as [number, number, number][], cost: { money: 0, mats: emptyMats() } } : this.planConnection(m);
+    const refund = { money: unit.money * old.length, mats: unit.mats.map((v) => v * old.length) };
+    const need = plan ? { money: Math.max(0, plan.cost.money - refund.money), mats: plan.cost.mats.map((v, k) => Math.max(0, v - refund.mats[k])) } : null;
+    const miss = need ? this.missingFor(need) : 'sem caminho';
+    if (!plan || miss) {
+      // put everything back as it was
+      this.machines.relocate(m, fromX, fromY);
+      m.ox = 0; m.oy = 0;
+      for (const o of old) { const b = this.machines.create('conveyor', o.tx, o.ty, o.dir, 1, o.id); b.belt = o.belt; b.built = 1; }
+      this.machines.linksDirty = true;
+      m.idleT = -20;
+      if (this.beltWarnT <= 0) {
+        this.beltWarnT = 40;
+        this.notify(plan ? `Um coletor quer seguir a sucata, mas as esteiras novas custam mais do que você tem: ${miss}.` : 'Um coletor quer seguir a sucata, mas não há caminho limpo para as esteiras. Use ↔ Mover.', 'Sistema');
+        this.fx.sound('error');
+      }
+      return;
+    }
+    // swap: refund the old belts, pay for the new route, keep the cargo
+    this.pay({ money: plan.cost.money - refund.money, mats: plan.cost.mats.map((v, k) => v - refund.mats[k]) });
+    for (const o of old) for (const pk of o.belt) { const mats = emptyMats(); mats[pk.mat] = pk.units; this.deliver(mats, 0, -1, -1, true); }
+    for (const [tx, ty, dir] of plan.tiles) {
+      const b = this.machines.create('conveyor', tx, ty, dir);
+      b.built = 0;
+      if (this.isVisible(tx * TILE, ty * TILE)) this.fx.burst((tx + 0.5) * TILE, (ty + 0.5) * TILE, 'build', 2);
+    }
+    this.machines.linksDirty = true;
+  }
+
   roamSpot(m: Machine): { tx: number; ty: number } | null {
     const R = this.roamRadius(m);
-    const keepService = this.inServiceArea(m.type, m.anchorX, m.anchorY);
+    const keepService = m.outConveyor < 0 && this.inServiceArea(m.type, m.anchorX, m.anchorY);
     let best: { tx: number; ty: number } | null = null, bs = Infinity;
     for (let y = Math.floor(m.anchorY - R); y <= Math.ceil(m.anchorY + R); y++) for (let x = Math.floor(m.anchorX - R); x <= Math.ceil(m.anchorX + R); x++) {
       if (Math.hypot(x - m.anchorX, y - m.anchorY) > R || (x === m.tx && y === m.ty)) continue;
@@ -977,6 +1043,7 @@ export class Game {
     this.updateMeta(dt);
     this.updateContracts(dt);
     this.updateSectors(dt);
+    this.beltWarnT -= dt;
     this.updateRoamers();
     this.updateTeleport(dt);
   }

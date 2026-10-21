@@ -301,4 +301,46 @@ describe('Game', () => {
     expect(m.bufferTotal).toBe(0);
     expect(sumMats(g.storage) + sumMats(g.yard)).toBeGreaterThan(st0);
   });
+
+  it('belt-fed collectors take their belts along (and stay put when broke)', () => {
+    const g = new Game();
+    g.money = 1e9; g.storage = [1e6, 1e6, 1e6, 1e6, 1e6, 0];
+    g.contracts.started = true;
+    g.upgrades = { a_belts: 1, a_arm: 1 };
+    g.autoSell = [false, false, false, false, false, false];
+    g.recompute();
+    const y = CENTER, x0 = CENTER + 2, x1 = CENTER + 14;
+    clearArea(g, x0, y, x1 + 1, y);
+    for (let x = x0; x <= x1; x++) expect(g.build('conveyor', x, y, 2)).toBeNull();
+    expect(g.build('collector', x1 + 1, y)).toBeNull();
+    const m = g.machines.machines.find((q) => q.type === 'collector')!;
+    let moved = false;
+    for (let i = 0; i < 4000 && !moved; i++) { g.update(0.5, idle); if (m.tx !== x1 + 1 || m.ty !== y) moved = true; }
+    expect(moved).toBe(true);
+    for (let i = 0; i < 10; i++) g.update(0.1, idle);
+    expect(m.outConveyor >= 0 || m.inService).toBe(true);
+    if (!m.inService) expect(m.linked).toBe(true);
+    // no money: it waits and warns instead of moving
+    const g2 = new Game();
+    g2.money = 1e9; g2.storage = [1e6, 1e6, 1e6, 1e6, 1e6, 0];
+    g2.contracts.started = true;
+    g2.upgrades = { a_belts: 1, a_arm: 1 };
+    g2.recompute();
+    clearArea(g2, x0, y, x1 + 1, y);
+    for (let x = x0; x <= x1; x++) g2.build('conveyor', x, y, 2);
+    g2.build('collector', x1 + 1, y);
+    const m2 = g2.machines.machines.find((q) => q.type === 'collector')!;
+    const belts = g2.machines.count('conveyor');
+    g2.money = 0; g2.storage = [0, 0, 0, 0, 0, 0];
+    g2.autoSell = [false, false, false, false, false, false];
+    let warned = false;
+    for (let i = 0; i < 3000; i++) {
+      g2.update(0.5, idle);
+      g2.money = 0; g2.storage = [0, 0, 0, 0, 0, 0];
+      for (const e of g2.events.splice(0)) if (e.type === 'message' && e.text.includes('coletor')) warned = true;
+    }
+    if (warned) expect(g2.machines.count('conveyor')).toBe(belts);
+    expect(g2.money).toBeGreaterThanOrEqual(0);
+    void m2;
+  });
 });

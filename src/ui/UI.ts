@@ -361,7 +361,7 @@ export class UI {
     else if (m.type === 'ancient') status = 'Entrega direta no posto (mistério)';
     else if (m.status === 'full' && m.inService && yardFull) { status = 'Parada: o pátio do posto está lotado. Construa uma Prensa.'; cls = 'bad'; }
     else if (m.status === 'full') { status = 'Caçamba cheia! Conecte ao posto ou esvazie.'; cls = 'bad'; }
-    else if (m.status === 'idle' && m.type === 'collector' && m.outConveyor < 0) { status = m.idleT < 0 ? 'Zona esgotada. Use ↔ Mover para levar a outra área (a zona vai junto).' : 'Andando até a próxima sucata da zona…'; cls = m.idleT < 0 ? 'warn' : 'ok'; }
+    else if (m.status === 'idle' && m.type === 'collector') { status = m.idleT < 0 ? (m.outConveyor >= 0 ? 'Parado: zona esgotada, sem caminho ou faltam recursos para levar as esteiras junto.' : 'Zona esgotada. Use ↔ Mover para levar a outra área (a zona vai junto).') : m.outConveyor >= 0 ? 'Mudando de lugar e levando as esteiras junto…' : 'Andando até a próxima sucata da zona…'; cls = m.idleT < 0 ? 'warn' : 'ok'; }
     else if (m.status === 'idle' && m.type === 'robots') { status = 'Sem sucata leve no alcance. Use ↔ Mover.'; cls = 'warn'; }
     else if (m.status === 'idle') { status = (def.heavy ? 'Área limpa! ' : 'Só sobrou sucata pesada (ou nada) no alcance. ') + 'Use ↔ Mover para levá-la a uma área com lixo.'; cls = 'warn'; }
     else status = 'Trabalhando';
