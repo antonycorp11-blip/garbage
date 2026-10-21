@@ -765,11 +765,12 @@ export class UI {
     targets.forEach((t, i) => {
       const el = layer.children[i] as HTMLElement;
       const p = r.worldToScreen(t.x, t.y);
-      const inside = p.x > M && p.x < W - M && p.y > M + 40 && p.y < H - M;
+      const top = 110, bot = H - 120;
+      const inside = p.x > M && p.x < W - M && p.y > top && p.y < bot;
       let x = p.x, y = p.y, ang = 0;
       if (!inside) {
         const cx = W / 2, cy = H / 2, dx = p.x - cx, dy = p.y - cy;
-        const k = Math.min((W / 2 - M) / Math.max(1, Math.abs(dx)), (H / 2 - M - 20) / Math.max(1, Math.abs(dy)));
+        const k = Math.min((W / 2 - M) / Math.max(1, Math.abs(dx)), (dy < 0 ? cy - top : bot - cy) / Math.max(1, Math.abs(dy)));
         x = cx + dx * k; y = cy + dy * k;
         ang = Math.atan2(dy, dx);
       }

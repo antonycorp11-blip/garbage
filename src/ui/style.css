@@ -876,7 +876,8 @@ h3.mrole small { font-size: 11px !important; }
 /* alerts / event chips */
 .chip.alert, .chip.evchip { font-size: 12px; gap: 6px; cursor: pointer; white-space: nowrap; overflow: hidden; }
 .chip.alert { background: linear-gradient(180deg, #7f1d1d, #581313) !important; color: #fecaca; }
-.chip.evchip { background: linear-gradient(180deg, #4c1d95, #2e1065) !important; color: #e9d5ff; animation: pulse 1.6s infinite; }
+.chip.evchip { background: linear-gradient(180deg, #4c1d95, #2e1065) !important; color: #e9d5ff; animation: evglow 1.6s infinite; }
+@keyframes evglow { 50% { box-shadow: 0 3px 0 var(--ink), 0 0 16px #a78bfa !important; } }
 .chip.alert b, .chip.evchip b { margin-left: auto; color: #fff; }
 .chip.alert small { opacity: .8; }
 /* world pointers (events, tutorial) */
@@ -886,7 +887,7 @@ h3.mrole small { font-size: 11px !important; }
 .wpin.on .ic { animation: pinbob 1.1s ease-in-out infinite; }
 .wpin .lb { font: 900 11px var(--font); color: #fff; background: #2a1a10; padding: 1px 6px; border-radius: 8px; white-space: nowrap; }
 .wpin .lb:empty { display: none; }
-.wpin .ar { position: absolute; left: 50%; top: 50%; width: 0; height: 0; border-left: 12px solid #fde047; border-top: 8px solid transparent; border-bottom: 8px solid transparent; margin: -8px 0 0 18px; transform-origin: -18px 8px; display: none; filter: drop-shadow(0 2px 0 #2a1a10); }
+.wpin .ar { position: absolute; left: 50%; top: 50%; width: 0; height: 0; border-left: 12px solid #fde047; border-top: 8px solid transparent; border-bottom: 8px solid transparent; margin: -8px 0 0 26px; transform-origin: -26px 8px; display: none; filter: drop-shadow(0 2px 0 #2a1a10); }
 .wpin.edge { translate: -50% -50%; }
 .wpin.edge .ar { display: block; }
 .wpin.guide .ic { font-size: 30px; }
