@@ -14,8 +14,11 @@ const regionKinds = REGIONS.map((r) => ({
 }));
 
 export function baseK(initial: number): number {
-  return initial === 0 ? 0 : Math.min(18, 3 + Math.floor(initial / 2.2));
+  return initial === 0 ? 0 : Math.min(13, 3 + Math.floor(initial / 3));
 }
+
+/** Each biome leans on one palette variant so it reads as a place, not confetti. */
+const FAVORED = [0, 0, 0, 1, 0, 2, 2, 1];
 
 export function visibleK(count: number, initial: number): number {
   if (count <= 0) return 0;
@@ -41,7 +44,8 @@ export function genTileItems(region: number, tx: number, ty: number, initial: nu
     if (big && h4 > 0.5) kind = pickWeighted(rk.small, h4);
     const isBig = rk.bigSet.has(kind);
     const spread = isBig ? 0.35 : 1.15;
-    const variant = Math.floor(h3 * VARIANTS);
+    const fav = FAVORED[region] ?? 0;
+    const variant = h3 < 0.62 ? fav : Math.floor(((h3 * 31) % 1) * VARIANTS);
     const rot = Math.floor(((h3 * 97) % 1) * ROTS);
     const layer = i < b * 0.34 ? 0 : i < b * 0.67 ? 1 : 2;
     out.push({
@@ -50,7 +54,7 @@ export function genTileItems(region: number, tx: number, ty: number, initial: nu
       y: (ty + 0.5 + (((h2 * 7919) % 1) - 0.5) * spread) * TILE,
       layer: isBig ? -1 : layer,
       order: ty * WORLD_TILES + tx + i * 0.001,
-      scale: isBig ? 1 : 0.88 + ((h1 * 7717) % 1) * 0.4,
+      scale: isBig ? 1.05 : 1 + ((h1 * 7717) % 1) * 0.4,
     });
   }
 }

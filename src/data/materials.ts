@@ -4,12 +4,12 @@ export const M_PLASTIC = 0, M_METAL = 1, M_PAPER = 2, M_GLASS = 3, M_ELEC = 4, M
 export interface MaterialDef { id: string; name: string; value: number; color: string; dark: string }
 
 export const MATERIALS: MaterialDef[] = [
-  { id: 'plastic', name: 'Plástico', value: 1, color: '#4fc3f7', dark: '#0277bd' },
-  { id: 'metal', name: 'Metal', value: 3, color: '#cfd8dc', dark: '#607d8b' },
-  { id: 'paper', name: 'Papel', value: 0.8, color: '#e0c08f', dark: '#8d6e45' },
-  { id: 'glass', name: 'Vidro', value: 1.6, color: '#86efac', dark: '#2e7d4f' },
-  { id: 'electronics', name: 'Eletrônicos', value: 6, color: '#ffd54f', dark: '#b28704' },
-  { id: 'rare', name: 'Raridades', value: 45, color: '#e879f9', dark: '#86198f' },
+  { id: 'plastic', name: 'Cristal', value: 1, color: '#f472b6', dark: '#9d174d' },
+  { id: 'metal', name: 'Liga Estelar', value: 3, color: '#93c5fd', dark: '#1e40af' },
+  { id: 'paper', name: 'Biogel', value: 0.8, color: '#86efac', dark: '#15803d' },
+  { id: 'glass', name: 'Âmbar', value: 1.6, color: '#fb923c', dark: '#9a3412' },
+  { id: 'electronics', name: 'Plasma', value: 6, color: '#22d3ee', dark: '#0e7490' },
+  { id: 'rare', name: 'Relíquias', value: 45, color: '#c084fc', dark: '#6b21a8' },
 ];
 
 export const emptyMats = (): number[] => [0, 0, 0, 0, 0, 0];

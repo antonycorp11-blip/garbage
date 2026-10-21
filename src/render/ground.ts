@@ -6,13 +6,15 @@ export const GROUND_PERIOD = 512;
 
 interface GroundStyle { base: [number, number, number]; vary: number; specks: string[]; speckN: number }
 
+// Nébula-7 palette. Constant names are historical: DIRT = soil under junk, EARTH = clean soil,
+// CONCRETE = alloy deck plates, ASPHALT = old landing strips, GRAVEL = meteor dust, RUINFLOOR = jade temple stone.
 const STYLES: Record<number, GroundStyle> = {
-  [G_DIRT]: { base: [92, 72, 50], vary: 40, specks: ['#3e2f20', '#7a6045', '#5a4632'], speckN: 1400 },
-  [G_EARTH]: { base: [139, 108, 72], vary: 34, specks: ['#6b5236', '#a88a62', '#7f6545', '#b39a72'], speckN: 1100 },
-  [G_CONCRETE]: { base: [132, 130, 122], vary: 26, specks: ['#6f6d66', '#9a978e', '#5b5a55'], speckN: 1500 },
-  [G_ASPHALT]: { base: [62, 63, 66], vary: 16, specks: ['#2c2d30', '#55565a', '#77787c'], speckN: 3000 },
-  [G_GRAVEL]: { base: [118, 106, 88], vary: 30, specks: ['#8b8378', '#5f574b', '#a39b8e', '#6e6252'], speckN: 2600 },
-  [G_RUINFLOOR]: { base: [150, 136, 112], vary: 28, specks: ['#7c6e58', '#a89a80'], speckN: 700 },
+  [G_DIRT]: { base: [84, 66, 112], vary: 30, specks: ['#3b2a55', '#6b5590', '#4c3a6a', '#8a6fa8'], speckN: 1400 },
+  [G_EARTH]: { base: [128, 110, 166], vary: 26, specks: ['#6f5a99', '#a28cc8', '#8573b0', '#b8a6da'], speckN: 1000 },
+  [G_CONCRETE]: { base: [138, 140, 172], vary: 18, specks: ['#6e7096', '#a3a6c8', '#5b5d80'], speckN: 1200 },
+  [G_ASPHALT]: { base: [66, 62, 108], vary: 12, specks: ['#2a2848', '#5a5890', '#3c3a66'], speckN: 2400 },
+  [G_GRAVEL]: { base: [134, 100, 126], vary: 26, specks: ['#a07898', '#6a4a66', '#c09ab4', '#7e5a78'], speckN: 2400 },
+  [G_RUINFLOOR]: { base: [88, 134, 132], vary: 22, specks: ['#4e7e7c', '#9cc8c0', '#6aa29e'], speckN: 700 },
 };
 
 /** Builds seamless (periodic) ground textures at the given render scale. */
@@ -67,23 +69,41 @@ export function buildGroundTextures(RS: number): HTMLCanvasElement[] {
       }
     }
     if (g === G_CONCRETE) {
-      c.strokeStyle = 'rgba(40,38,34,0.45)'; c.lineWidth = 1;
+      // alloy deck plates with cyan seams and rivets
+      c.strokeStyle = 'rgba(30,28,60,0.5)'; c.lineWidth = 1.2;
       for (let k = 0; k <= P; k += 64) { c.beginPath(); c.moveTo(k + 0.5, 0); c.lineTo(k + 0.5, P); c.moveTo(0, k + 0.5); c.lineTo(P, k + 0.5); c.stroke(); }
-      c.strokeStyle = 'rgba(255,255,255,0.12)';
-      for (let k = 0; k <= P; k += 64) { c.beginPath(); c.moveTo(k + 1.5, 0); c.lineTo(k + 1.5, P); c.moveTo(0, k + 1.5); c.lineTo(P, k + 1.5); c.stroke(); }
+      c.strokeStyle = 'rgba(103,232,249,0.22)'; c.lineWidth = 0.8;
+      for (let k = 0; k <= P; k += 64) { c.beginPath(); c.moveTo(k + 1.6, 0); c.lineTo(k + 1.6, P); c.moveTo(0, k + 1.6); c.lineTo(P, k + 1.6); c.stroke(); }
+      for (let y = 0; y < P; y += 64) for (let x = 0; x < P; x += 64) {
+        for (const [dx, dy] of [[6, 6], [58, 6], [6, 58], [58, 58]]) {
+          c.fillStyle = 'rgba(30,28,60,0.45)'; c.beginPath(); c.arc(x + dx + 0.4, y + dy + 0.5, 1.4, 0, 6.28); c.fill();
+          c.fillStyle = 'rgba(220,224,255,0.5)'; c.beginPath(); c.arc(x + dx, y + dy, 1, 0, 6.28); c.fill();
+        }
+        if (hash2(x, y, 9) < 0.3) { c.fillStyle = 'rgba(255,255,255,0.06)'; c.fillRect(x + 2, y + 2, 60, 60); }
+      }
+    }
+    if (g === G_ASPHALT) {
+      // landing-strip panels
+      c.strokeStyle = 'rgba(20,18,40,0.6)'; c.lineWidth = 1;
+      for (let k = 0; k <= P; k += 32) { c.beginPath(); c.moveTo(k + 0.5, 0); c.lineTo(k + 0.5, P); c.moveTo(0, k + 0.5); c.lineTo(P, k + 0.5); c.stroke(); }
     }
     if (g === G_RUINFLOOR) {
       for (let y = 0; y < P; y += 16) for (let x = 0; x < P; x += 16) {
         const h = hash2(x, y, 5);
         if (h < 0.12) continue;
-        c.fillStyle = ((x + y) / 16) % 2 === 0 ? 'rgba(210,196,170,0.35)' : 'rgba(110,86,70,0.28)';
+        c.fillStyle = ((x + y) / 16) % 2 === 0 ? 'rgba(190,240,230,0.28)' : 'rgba(30,70,80,0.25)';
         c.fillRect(x + 0.5, y + 0.5, 15, 15);
-        c.strokeStyle = 'rgba(60,50,40,0.35)'; c.lineWidth = 0.6; c.strokeRect(x + 0.5, y + 0.5, 15, 15);
+        c.strokeStyle = 'rgba(20,50,60,0.4)'; c.lineWidth = 0.6; c.strokeRect(x + 0.5, y + 0.5, 15, 15);
+        if (h > 0.9) {
+          // etched glyph
+          c.strokeStyle = 'rgba(160,255,240,0.35)'; c.lineWidth = 0.7;
+          c.beginPath(); c.arc(x + 8, y + 8, 3.5, 0.5, 5.5); c.moveTo(x + 8, y + 4); c.lineTo(x + 8, y + 12); c.stroke();
+        }
       }
     }
     // cracks
     if (g === G_CONCRETE || g === G_ASPHALT || g === G_RUINFLOOR) {
-      c.strokeStyle = g === G_ASPHALT ? 'rgba(15,15,18,0.6)' : 'rgba(50,45,40,0.5)';
+      c.strokeStyle = g === G_ASPHALT ? 'rgba(15,12,30,0.6)' : 'rgba(30,25,50,0.4)';
       c.lineWidth = 0.7;
       for (let k = 0; k < 22; k++) {
         let x = r() * P, y = r() * P;
@@ -97,7 +117,7 @@ export function buildGroundTextures(RS: number): HTMLCanvasElement[] {
     // stains
     for (let k = 0; k < 14; k++) {
       const x = r() * (P - 60) + 30, y = r() * (P - 60) + 30, s = 8 + r() * 22;
-      c.fillStyle = rad(c, x, y, 0, s, [[0, g === G_ASPHALT ? 'rgba(0,0,0,0.25)' : 'rgba(40,25,10,0.18)'], [1, 'rgba(0,0,0,0)']]);
+      c.fillStyle = rad(c, x, y, 0, s, [[0, g === G_ASPHALT ? 'rgba(0,0,0,0.25)' : g === G_EARTH ? 'rgba(90,220,210,0.10)' : 'rgba(30,15,50,0.16)'], [1, 'rgba(0,0,0,0)']]);
       ellipse(c, x, y, s, s * 0.7); c.fill();
     }
     out.push(cv);
@@ -111,7 +131,7 @@ export function buildGrime(RS: number): HTMLCanvasElement {
   const cv = makeCanvas(S * RS, S * RS);
   const c = ctx2d(cv);
   c.scale(RS, RS);
-  c.fillStyle = rad(c, S / 2, S / 2, 0, S / 2, [[0, 'rgba(28,18,8,0.9)'], [0.45, 'rgba(32,22,10,0.6)'], [1, 'rgba(32,22,10,0)']]);
+  c.fillStyle = rad(c, S / 2, S / 2, 0, S / 2, [[0, 'rgba(30,16,52,0.85)'], [0.45, 'rgba(36,20,60,0.55)'], [1, 'rgba(36,20,60,0)']]);
   c.fillRect(0, 0, S, S);
   return cv;
 }
@@ -119,7 +139,7 @@ export function buildGrime(RS: number): HTMLCanvasElement {
 /** Patches of tiny debris that fill the gaps between bigger items. */
 export function buildDebris(RS: number, n = 6): HTMLCanvasElement[] {
   const out: HTMLCanvasElement[] = [];
-  const cols = ['#e8e2d0', '#5b8fc7', '#c94f3d', '#e2c25a', '#6fae6a', '#9a9a9a', '#3a3a3a', '#d98c4a', '#ffffff', '#7a5a3a'];
+  const cols = ['#f9a8d4', '#93c5fd', '#86efac', '#fdba74', '#67e8f9', '#c4b5fd', '#e2e8f0', '#fde68a', '#5b4a7a', '#334155'];
   for (let k = 0; k < n; k++) {
     const S = 44;
     const cv = makeCanvas(S * RS, S * RS);

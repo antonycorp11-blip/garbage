@@ -243,3 +243,64 @@ export function lamp(c: C, x: number, y: number, col: string, on: boolean, r = 1
 }
 
 export { makeCanvas };
+
+// ------------------------------------------------------------------ sci-fi kit (alien outpost style)
+/** Shared palette for machines: cream shells, orange + teal accents, violet mechanics, cyan energy. */
+export const SCI = {
+  shell: '#f3ead8', shellD: '#d8c9ad', orange: '#ff9a3c', orangeD: '#d9661a', teal: '#2bb5a8', tealD: '#17796f',
+  violet: '#4b416e', violetD: '#2f2848', cyan: '#5ff2ff', cyanD: '#18a9c9', gold: '#ffd257',
+};
+
+/** Rounded cel-shaded shell (capsule/pod) with a soft rim light. */
+export function shell(c: C, x: number, y: number, w: number, h: number, col: string, r = Math.min(w, h) * 0.45) {
+  rrect(c, x, y, w, h, r); c.fillStyle = col; c.fill();
+  c.save(); rrect(c, x, y, w, h, r); c.clip();
+  c.fillStyle = shade(col, -0.16); c.beginPath(); c.ellipse(x + w * 0.62, y + h * 1.05, w * 0.75, h * 0.62, 0, 0, 6.28); c.fill();
+  c.fillStyle = 'rgba(255,255,255,0.55)'; c.beginPath(); c.ellipse(x + w * 0.3, y + h * 0.22, w * 0.22, h * 0.1, -0.35, 0, 6.28); c.fill();
+  c.restore();
+  rrect(c, x, y, w, h, r); ink(c);
+}
+
+/** Glass window/dome face with a gloss streak. */
+export function glass(c: C, x: number, y: number, w: number, h: number, tint = '#1d3a4f', r = 2) {
+  rrect(c, x, y, w, h, r); c.fillStyle = tint; c.fill();
+  c.save(); rrect(c, x, y, w, h, r); c.clip();
+  c.fillStyle = 'rgba(255,255,255,0.18)'; c.fillRect(x, y, w, h * 0.45);
+  c.fillStyle = 'rgba(255,255,255,0.6)';
+  c.beginPath(); c.moveTo(x + w * 0.18, y + h); c.lineTo(x + w * 0.42, y); c.lineTo(x + w * 0.52, y); c.lineTo(x + w * 0.28, y + h); c.closePath(); c.fill();
+  c.restore();
+  rrect(c, x, y, w, h, r); ink(c, 0.8);
+}
+
+/** Level pips: small capsules, gold when maxed. */
+export function levelPips(c: C, cx: number, y: number, level: number, max = 5) {
+  const w = 2.6, gap = 1.1, total = max * w + (max - 1) * gap;
+  rrect(c, cx - total / 2 - 1.4, y - 1.4, total + 2.8, 4.6, 2.3); c.fillStyle = 'rgba(30,22,40,0.85)'; c.fill();
+  for (let i = 0; i < max; i++) {
+    rrect(c, cx - total / 2 + i * (w + gap), y, w, 1.8, 0.9);
+    c.fillStyle = i < level ? (level >= max ? SCI.gold : SCI.orange) : 'rgba(255,255,255,0.15)'; c.fill();
+  }
+}
+
+/** Glowing energy stroke (additive). */
+export function energyLine(c: C, pts: number[], w: number, col: string, a = 0.9) {
+  c.save(); c.globalCompositeOperation = 'lighter'; c.lineCap = 'round'; c.lineJoin = 'round';
+  const path = () => { c.beginPath(); c.moveTo(pts[0], pts[1]); for (let i = 2; i < pts.length; i += 2) c.lineTo(pts[i], pts[i + 1]); };
+  path(); c.strokeStyle = shade(col, 0, a * 0.35); c.lineWidth = w * 3; c.stroke();
+  path(); c.strokeStyle = shade(col, 0.4, a); c.lineWidth = w; c.stroke();
+  c.restore();
+}
+
+/** Faceted gem in a material color (packets, silo contents, piles). */
+export function gem(c: C, x: number, y: number, r: number, col: string, rot = 0) {
+  c.save(); c.translate(x, y); c.rotate(rot);
+  c.beginPath(); c.moveTo(0, -r); c.lineTo(r * 0.85, -r * 0.2); c.lineTo(r * 0.5, r * 0.85); c.lineTo(-r * 0.5, r * 0.85); c.lineTo(-r * 0.85, -r * 0.2); c.closePath();
+  c.fillStyle = col; c.fill();
+  c.beginPath(); c.moveTo(0, -r); c.lineTo(r * 0.85, -r * 0.2); c.lineTo(0, r * 0.1); c.lineTo(-r * 0.85, -r * 0.2); c.closePath();
+  c.fillStyle = shade(col, 0.35); c.fill();
+  c.beginPath(); c.moveTo(0, r * 0.1); c.lineTo(r * 0.5, r * 0.85); c.lineTo(r * 0.85, -r * 0.2); c.closePath();
+  c.fillStyle = shade(col, -0.25); c.fill();
+  c.beginPath(); c.moveTo(0, -r); c.lineTo(r * 0.85, -r * 0.2); c.lineTo(r * 0.5, r * 0.85); c.lineTo(-r * 0.5, r * 0.85); c.lineTo(-r * 0.85, -r * 0.2); c.closePath();
+  c.strokeStyle = INK; c.lineWidth = Math.max(0.45, r * 0.22); c.stroke();
+  c.restore();
+}
