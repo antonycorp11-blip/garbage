@@ -1,4 +1,5 @@
 import { CENTER, TILE, WORLD_PX, WORLD_TILES, inWorld, tileIndex } from '../core/constants';
+import { G_ASPHALT } from '../data/regions';
 import { hash2, valueNoise } from '../core/rng';
 import { Game } from '../game/Game';
 import { Effects } from './Effects';
@@ -130,10 +131,24 @@ export class Life {
     const d = this.dog;
     if (inV(d.x, d.y)) out.push({ y: d.y, d: (c) => drawDog(c, d, time) });
     if (inV(VALDEMAR.x, VALDEMAR.y)) out.push({ y: VALDEMAR.y, d: (c) => drawValdemar(c, VALDEMAR.x, VALDEMAR.y, time, this.speech) });
+    const w = this.game.world;
+    const tx0 = Math.max(0, Math.floor(view.x0 / TILE) - 1);
+    const tx1 = Math.min(WORLD_TILES - 1, Math.ceil(view.x1 / TILE) + 1);
+    const ty0 = Math.max(0, Math.floor(view.y0 / TILE) - 1);
+    const ty1 = Math.min(WORLD_TILES - 1, Math.ceil(view.y1 / TILE) + 1);
+    for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+      const i = tileIndex(tx, ty);
+      if (w.initial[i] === 0 || w.garbage[i] !== 0 || w.ground[i] === G_ASPHALT || w.occupant[i] >= 0 || w.specialAt[i] >= 0) continue;
+      const seed = hash2(tx, ty, 93);
+      if (seed < 0.982) continue;
+      const x = (tx + 0.25 + hash2(tx, ty, 94) * 0.5) * TILE;
+      const y = (ty + 0.45 + hash2(tx, ty, 95) * 0.35) * TILE;
+      out.push({ y, d: (c) => drawGlub(c, x, y, time, seed) });
+    }
     return out;
   }
 
-  /** Small animated details on the ground (flies, butterflies). */
+  /** Small bioluminescent motes above dense scrap piles. */
   drawGround(c: C, view: View, time: number, zoom: number) {
     if (zoom < 0.7) return;
     const g = this.game, w = g.world, p = g.player;
@@ -145,36 +160,26 @@ export class Life {
       const gv = w.garbage[i];
       const h = hash2(tx, ty, 61);
       if (gv > 30 && h < 0.07) {
-        // fly swarm
+        // scavenger motes hover where the alien materials are densest
         const cx = (tx + 0.5) * TILE, cy = (ty + 0.3) * TILE;
         if (cx < view.x0 || cx > view.x1 || cy < view.y0 || cy > view.y1) continue;
         for (let k = 0; k < 5; k++) {
           const t = time * (2.2 + k * 0.4) + k * 1.7 + h * 50;
           const fx = cx + Math.sin(t) * (5 + k * 1.4) + Math.sin(t * 2.7) * 2;
           const fy = cy + Math.cos(t * 1.3) * (3 + k) - 6 + Math.sin(t * 3.1) * 1.5;
-          c.fillStyle = 'rgba(15,15,15,0.85)'; c.fillRect(fx - 0.6, fy - 0.5, 1.2, 1);
-          c.fillStyle = 'rgba(220,230,255,0.45)'; c.fillRect(fx - 1, fy - 1.2 + (Math.sin(time * 60 + k) > 0 ? 0 : 0.4), 0.8, 0.6); c.fillRect(fx + 0.3, fy - 1.2, 0.8, 0.6);
+          const pulse = 0.55 + Math.sin(time * 7 + k * 2.2) * 0.3;
+          c.fillStyle = k % 2 ? `rgba(244,171,252,${pulse * 0.35})` : `rgba(103,232,249,${pulse * 0.35})`;
+          c.beginPath(); c.arc(fx, fy, 2.2, 0, 6.28); c.fill();
+          c.fillStyle = k % 2 ? '#f0abfc' : '#a5f3fc';
+          c.fillRect(fx - 0.45, fy - 0.45, 0.9, 0.9);
         }
-      } else if (gv === 0 && h > 0.965 && w.ground[i] !== 3) {
-        // butterfly over clean ground
-        const t = time * 0.6 + h * 40;
-        const bx = (tx + 0.5) * TILE + Math.sin(t) * 26 + Math.sin(t * 2.3) * 8;
-        const by = (ty + 0.5) * TILE + Math.cos(t * 0.8) * 18 - 10;
-        if (bx < view.x0 || bx > view.x1 || by < view.y0 || by > view.y1) continue;
-        const flap = Math.abs(Math.sin(time * 14 + h * 9));
-        const col = ['#fbbf24', '#f472b6', '#60a5fa', '#ffffff'][Math.floor(h * 1000) % 4];
-        c.fillStyle = 'rgba(0,0,0,0.18)'; ellipse(c, bx + 3, by + 14, 2.5, 1); c.fill();
-        c.fillStyle = col;
-        ellipse(c, bx - 1.6 * flap, by, 1.8 * flap + 0.3, 2.2); c.fill();
-        ellipse(c, bx + 1.6 * flap, by, 1.8 * flap + 0.3, 2.2); c.fill();
-        c.fillStyle = '#222'; c.fillRect(bx - 0.3, by - 1.6, 0.6, 3.2);
       }
     }
   }
 
-  /** Clouds and birds, above everything in the world. */
+  /** Cloud shadows and small flying alien fauna above the world. */
   drawSky(c: C, view: View, time: number) {
-    // birds + shadows
+    // little manta-shaped sky creatures and their shadows
     const bc = this.birdCenter;
     for (const b of this.birds) {
       const x = bc.x + Math.cos(b.a) * b.r, y = bc.y + Math.sin(b.a) * b.r * 0.6;
@@ -186,9 +191,11 @@ export class Life {
       c.beginPath(); c.moveTo(-9, flap * 1.5); c.quadraticCurveTo(-4, -2, 0, 0); c.quadraticCurveTo(4, -2, 9, flap * 1.5); c.lineTo(0, 2); c.closePath(); c.fill();
       c.restore();
       c.save(); c.translate(x, y - b.h); c.rotate(ang);
-      c.fillStyle = '#1b1612';
+      c.fillStyle = '#403364';
       c.beginPath(); c.moveTo(-10, flap * 3); c.quadraticCurveTo(-5, -3 + flap, 0, -0.5); c.quadraticCurveTo(5, -3 + flap, 10, flap * 3); c.quadraticCurveTo(4, 0.8, 0, 2.2); c.quadraticCurveTo(-4, 0.8, -10, flap * 3); c.fill();
-      c.fillStyle = '#b94a3a'; c.beginPath(); c.arc(0, -1.8, 1, 0, 6.28); c.fill();
+      c.strokeStyle = '#2a1a10'; c.lineWidth = 0.7; c.stroke();
+      c.fillStyle = '#7cf4e7'; c.beginPath(); c.arc(0, -1.1, 1.4, 0, 6.28); c.fill();
+      c.fillStyle = '#f0abfc'; c.beginPath(); c.arc(-3.5, -0.5, 0.6, 0, 6.28); c.arc(3.5, -0.5, 0.6, 0, 6.28); c.fill();
       c.restore();
     }
     // cloud shadows
@@ -200,6 +207,35 @@ export class Life {
       c.globalAlpha = 1;
     }
   }
+}
+
+/** Native jelly creatures return only where the player has removed junk. */
+function drawGlub(c: C, x: number, y: number, time: number, seed: number) {
+  const phase = time * (2.1 + seed) + seed * 100;
+  const hop = Math.max(0, Math.sin(phase)) ** 2 * 2.5;
+  const squash = 1 + (hop === 0 ? Math.sin(phase * 2) * 0.07 : -hop * 0.035);
+  const col = seed < 0.988 ? '#73e9dc' : seed < 0.994 ? '#d9a7f4' : '#a5df80';
+  groundShadow(c, x, y, 5.2 - hop * 0.35, 2, 0.28);
+  c.save();
+  c.translate(x, y - hop);
+  c.scale(1 / squash, squash);
+  c.fillStyle = col;
+  c.beginPath();
+  c.moveTo(-5, 0);
+  c.bezierCurveTo(-5.8, -5, -3.7, -9.2, 0, -9.5);
+  c.bezierCurveTo(3.7, -9.2, 5.8, -5, 5, 0);
+  c.quadraticCurveTo(0, 2.2, -5, 0);
+  c.fill();
+  c.strokeStyle = '#2a1a10'; c.lineWidth = 0.9; c.stroke();
+  c.fillStyle = 'rgba(24,102,115,0.25)';
+  c.beginPath(); c.ellipse(0, -0.3, 4.7, 1.5, 0, 0, 6.28); c.fill();
+  c.fillStyle = 'rgba(255,255,255,0.55)';
+  ellipse(c, -1.8, -7.4, 1.3, 0.7, -0.4); c.fill();
+  c.fillStyle = '#21394b';
+  for (const ex of [-1.8, 1.8]) { c.beginPath(); c.arc(ex, -4.2, 0.65, 0, 6.28); c.fill(); }
+  c.strokeStyle = '#21394b'; c.lineWidth = 0.5;
+  c.beginPath(); c.arc(0, -3.1, 1, 0.15, Math.PI - 0.15); c.stroke();
+  c.restore();
 }
 
 // ------------------------------------------------------------------------------------ dog (Pulguento, a little scrap robot dog)

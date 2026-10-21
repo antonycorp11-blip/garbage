@@ -728,7 +728,7 @@ export class UI {
     const cv = document.createElement('canvas'); cv.width = 240; cv.height = 240;
     const c = cv.getContext('2d')!;
     c.translate(120, 150); c.scale(2.6, 2.6);
-    try { drawWorker(c, 0, 0, 0.6, { facing: 'right', moving: false, walk: 0, action: 0, tier: g.toolTier, bagLvl: g.upgrades.c_bag || 0, fill: 0.5, crown: !!g.flags.crown, happy: true, loadout: g.loadout }); } catch { /* art in flux */ }
+    drawWorker(c, 0, 0, 0.6, { facing: 'right', moving: false, walk: 0, action: 0, tier: g.toolTier, bagLvl: g.upgrades.c_bag || 0, fill: 0.5, crown: !!g.flags.crown, happy: true, loadout: g.loadout });
     url = cv.toDataURL();
     this.thumbs.set(key, url);
     return url;
