@@ -131,6 +131,19 @@ export class Renderer {
     (this.overlay.firstChild as HTMLElement).style.background = `linear-gradient(rgba(255,120,160,${d}), rgba(255,120,160,${d})), rgba(28,18,78,${a})`;
   }
 
+  private ground: HTMLCanvasElement | null = null;
+  private gstate = { valid: false, z: 0, ox: 0, oy: 0 };
+  /** how many times the ground layer was recomposed (diagnostics) */
+  groundDraws = 0;
+  private groundLayer(): HTMLCanvasElement {
+    if (!this.ground || this.ground.width !== this.canvas.width || this.ground.height !== this.canvas.height) {
+      this.ground = document.createElement('canvas');
+      this.ground.width = this.canvas.width; this.ground.height = this.canvas.height;
+      this.gstate.valid = false;
+    }
+    return this.ground;
+  }
+
   screenToWorld(sx: number, sy: number) {
     return { x: (sx - this.W / 2) / this.cam.zoom + this.cam.x, y: (sy - this.H / 2) / this.cam.zoom + this.cam.y };
   }
@@ -158,7 +171,7 @@ export class Renderer {
     cam.x = clamp(cam.x, Math.min(hw, WORLD_PX / 2), Math.max(WORLD_PX - hw, WORLD_PX / 2));
     cam.y = clamp(cam.y, Math.min(hh, WORLD_PX / 2), Math.max(WORLD_PX - hh, WORLD_PX / 2));
     const shake = this.fx.shakeAmt;
-    const sx = (Math.random() - 0.5) * shake, sy = (Math.random() - 0.5) * shake;
+    const sx = shake > 0.05 ? (Math.random() - 0.5) * shake : 0, sy = shake > 0.05 ? (Math.random() - 0.5) * shake : 0;
     const camX = cam.x + sx, camY = cam.y + sy;
     const view = { x0: camX - hw, y0: camY - hh, x1: camX + hw, y1: camY + hh };
     g.view = view;
@@ -166,12 +179,11 @@ export class Renderer {
     this.life.update(dt, time);
 
     c.setTransform(1, 0, 0, 1, 0, 0);
-    c.fillStyle = '#1d1430';
-    c.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
     // ---- chunks
     const z = cam.zoom * this.dpr;
-    const ox = this.canvas.width / 2 - camX * z, oy = this.canvas.height / 2 - camY * z;
+    // whole device pixels: the ground layer below can then be reused while the view holds still
+    const ox = Math.round(this.canvas.width / 2 - camX * z), oy = Math.round(this.canvas.height / 2 - camY * z);
     const cx0 = Math.max(0, Math.floor(view.x0 / CPX)), cx1 = Math.min(CHUNKS - 1, Math.floor(view.x1 / CPX));
     const cy0 = Math.max(0, Math.floor(view.y0 / CPX)), cy1 = Math.min(CHUNKS - 1, Math.floor(view.y1 / CPX));
     const todo: [number, number, number][] = [];
@@ -193,15 +205,65 @@ export class Renderer {
     // missing chunks first (they would show holes), then at most 1-2 refreshes per frame
     const budget = missing > 0 ? Math.min(missing + 1, this.tier >= 2 ? 4 : 8) : this.tier >= 2 ? 1 : 2;
     for (let i = 0; i < Math.min(budget, todo.length); i++) allow.add(todo[i][1] * CHUNKS + todo[i][0]);
-    c.imageSmoothingEnabled = true;
-    c.imageSmoothingQuality = this.tier >= 1 ? 'low' : 'medium';
-    for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) {
-      const cv = this.chunks.get(cx, cy, allow.has(cy * CHUNKS + cx));
-      if (!cv) continue;
+    // paint the chunks that need it (the only expensive ground work)
+    const paintedKeys: number[] = [];
+    for (const key of allow) { const cx = key % CHUNKS, cy = (key / CHUNKS) | 0; const had = this.chunks.lastRender(key); if (this.chunks.get(cx, cy, true) && this.chunks.lastRender(key) !== had) paintedKeys.push(key); }
+    // The ground lives in a screen-sized layer. Standing still it is reused untouched; walking it is
+    // shifted and only the strip entering the screen is drawn; a repainted chunk is copied in alone.
+    const bg = this.groundLayer();
+    const b = bg.getContext('2d', { alpha: false })!;
+    b.imageSmoothingEnabled = true;
+    b.imageSmoothingQuality = this.tier >= 1 ? 'low' : 'medium';
+    const rectOf = (cx: number, cy: number) => {
       const dx0 = Math.round(ox + cx * CPX * z), dy0 = Math.round(oy + cy * CPX * z);
-      const dx1 = Math.round(ox + (cx + 1) * CPX * z), dy1 = Math.round(oy + (cy + 1) * CPX * z);
-      c.drawImage(cv, dx0, dy0, dx1 - dx0, dy1 - dy0);
+      return [dx0, dy0, Math.round(ox + (cx + 1) * CPX * z) - dx0, Math.round(oy + (cy + 1) * CPX * z) - dy0];
+    };
+    const drawChunksIn = (x0: number, y0: number, x1: number, y1: number) => {
+      // screen rect -> chunk range
+      const wx0 = (x0 - ox) / z, wy0 = (y0 - oy) / z, wx1 = (x1 - ox) / z, wy1 = (y1 - oy) / z;
+      const a0 = Math.max(0, Math.floor(wx0 / CPX)), a1 = Math.min(CHUNKS - 1, Math.floor(wx1 / CPX));
+      const b0 = Math.max(0, Math.floor(wy0 / CPX)), b1 = Math.min(CHUNKS - 1, Math.floor(wy1 / CPX));
+      for (let cy = b0; cy <= b1; cy++) for (let cx = a0; cx <= a1; cx++) {
+        const cv = this.chunks.get(cx, cy, false);
+        if (!cv) continue;
+        const [rx, ry, rw, rh] = rectOf(cx, cy);
+        b.drawImage(cv, rx, ry, rw, rh);
+      }
+    };
+    const W = bg.width, H = bg.height;
+    const gs = this.gstate;
+    const dxs = ox - gs.ox, dys = oy - gs.oy;
+    if (!gs.valid || gs.z !== z || Math.abs(dxs) >= W / 2 || Math.abs(dys) >= H / 2) {
+      b.setTransform(1, 0, 0, 1, 0, 0);
+      b.fillStyle = '#1d1430'; b.fillRect(0, 0, W, H);
+      drawChunksIn(0, 0, W, H);
+      this.groundDraws++;
+    } else {
+      if (dxs || dys) {
+        b.globalCompositeOperation = 'copy';
+        b.drawImage(bg, dxs, dys);
+        b.globalCompositeOperation = 'source-over';
+        const strips: [number, number, number, number][] = [];
+        if (dxs > 0) strips.push([0, 0, dxs, H]); else if (dxs < 0) strips.push([W + dxs, 0, -dxs, H]);
+        if (dys > 0) strips.push([0, 0, W, dys]); else if (dys < 0) strips.push([0, H + dys, W, -dys]);
+        for (const [x, y, w2, h2] of strips) {
+          b.save();
+          b.beginPath(); b.rect(x, y, w2, h2); b.clip();
+          b.fillStyle = '#1d1430'; b.fillRect(x, y, w2, h2);
+          drawChunksIn(x, y, x + w2, y + h2);
+          b.restore();
+        }
+      }
+      for (const key of paintedKeys) {
+        const cx = key % CHUNKS, cy = (key / CHUNKS) | 0;
+        const cv = this.chunks.get(cx, cy, false);
+        if (!cv) continue;
+        const [rx, ry, rw, rh] = rectOf(cx, cy);
+        b.drawImage(cv, rx, ry, rw, rh);
+      }
     }
+    gs.valid = true; gs.z = z; gs.ox = ox; gs.oy = oy;
+    c.drawImage(bg, 0, 0);
 
     T = this.pt('chunks', T);
     // ---- world space

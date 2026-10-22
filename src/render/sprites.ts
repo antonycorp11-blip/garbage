@@ -7,22 +7,25 @@ type R = () => number;
 
 export interface Sprite { page: number; sx: number; sy: number; sw: number; sh: number; ax: number; ay: number; w: number; h: number }
 
-/** Simple shelf-packing atlas. */
+/**
+ * Sprite store. Each sprite keeps its own small canvas ("page"): drawing a sub-rectangle of a
+ * huge packed atlas is dramatically slower in browsers (the whole page gets sampled/uploaded).
+ */
 export class Atlas {
-  pages: HTMLCanvasElement[] = [];
-  private x = 0; private y = 0; private rowH = 0;
-  constructor(public size = 2048) { this.newPage(); }
-  private newPage() { this.pages.push(makeCanvas(this.size, this.size)); this.x = 0; this.y = 0; this.rowH = 0; }
+  pages: (HTMLCanvasElement | ImageBitmap)[] = [];
+  constructor(public size = 2048) {}
+  /** Swap the canvases for immutable ImageBitmaps (GPU friendly) once the browser has made them. */
+  finalize() {
+    if (typeof createImageBitmap !== 'function') return;
+    this.pages.forEach((cv, i) => {
+      if (!(cv instanceof HTMLCanvasElement)) return;
+      createImageBitmap(cv).then((bm) => { this.pages[i] = bm; }).catch(() => undefined);
+    });
+  }
   add(src: HTMLCanvasElement, ax: number, ay: number, scale: number): Sprite {
     const w = src.width, h = src.height;
-    if (this.x + w + 1 > this.size) { this.x = 0; this.y += this.rowH + 1; this.rowH = 0; }
-    if (this.y + h + 1 > this.size) this.newPage();
-    const page = this.pages.length - 1;
-    ctx2d(this.pages[page]).drawImage(src, this.x, this.y);
-    const s: Sprite = { page, sx: this.x, sy: this.y, sw: w, sh: h, ax, ay, w: w / scale, h: h / scale };
-    this.x += w + 1;
-    this.rowH = Math.max(this.rowH, h);
-    return s;
+    this.pages.push(src);
+    return { page: this.pages.length - 1, sx: 0, sy: 0, sw: w, sh: h, ax, ay, w: w / scale, h: h / scale };
   }
 }
 
@@ -752,5 +755,6 @@ export function buildItemSprites(scale: number): ItemSprites {
       }
     }
   });
+  atlas.finalize();
   return { atlas, sprites, RS: scale };
 }
