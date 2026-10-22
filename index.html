@@ -2,6 +2,35 @@
 <html lang="pt-BR">
 <head>
   <meta charset="UTF-8" />
+  <script>
+    // ATHG: o jogo só é acessado pela plataforma. Aberto fora de um iframe
+    // (link direto, PWA instalado), redireciona para o player da ATHG. Dev local continua livre.
+    (function () {
+      var h = location.hostname;
+      var local = h === 'localhost' || h === '127.0.0.1' || h === '[::1]' || /\.local$/.test(h) ||
+        /^(10|192\.168|172\.(1[6-9]|2\d|3[01]))\./.test(h) || location.protocol === 'file:';
+      if (window.top === window.self && !local) {
+        document.documentElement.style.display = 'none';
+        location.replace('https://athg.antonycorp11.workers.dev/play/garbage-kingdom');
+      }
+    })();
+  </script>
+  <script>
+    // ATHG Modo Gravação: com o foco no jogo, ⌘1/⌘2/⌘3 (Ctrl no Windows) trocam a cena do
+    // estúdio. Só liga quando o estúdio da ATHG avisa; no player normal nada muda.
+    (function () {
+      if (window.top === window.self) return;
+      var studio = false;
+      addEventListener('message', function (e) {
+        if (e.source === window.parent && e.data && e.data.type === 'ATHG_STUDIO_ON') studio = true;
+      });
+      addEventListener('keydown', function (e) {
+        if (!studio || !(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey || ['1', '2', '3'].indexOf(e.key) < 0) return;
+        e.preventDefault();
+        window.parent.postMessage({ type: 'ATHG_STUDIO_KEY', key: e.key }, '*');
+      }, true);
+    })();
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <meta name="theme-color" content="#1b140d" />
   <title>Garbage Kingdom</title>
