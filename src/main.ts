@@ -147,7 +147,7 @@ export class App implements PointerSink {
   defaultZoom() {
     const short = Math.min(window.innerWidth, window.innerHeight);
     const touch = document.body.classList.contains('touch');
-    return touch ? clamp(short / 400, 0.85, 1.3) : clamp(short / 760, 0.6, 1.1);
+    return touch ? clamp(short / 400, 0.85, 1.3) : clamp(short / 620, 0.8, 1.5);
   }
 
   applySettings() {
@@ -547,7 +547,9 @@ export class App implements PointerSink {
     this.renderer.chunks.rendersThisFrame = 0;
     // lightest tier: draw the world at 30 fps (the game itself still updates every frame)
     this.frameN++;
-    const skipDraw = this.renderer.tier >= 3 && (this.frameN & 1) === 1 && !this.build;
+    // behind an open menu the world barely matters: redraw it rarely (the tree menu covers it fully)
+    const menu = !!this.ui.modalTab;
+    const skipDraw = menu ? this.frameN % (this.ui.modalTab === 'upgrades' ? 30 : 6) !== 0 : this.renderer.tier >= 3 && (this.frameN & 1) === 1 && !this.build;
     if (!skipDraw) { try { this.renderer.draw(this.time, this.drawDt + dt, this.build); } catch (e) { this.reportError(e); } this.drawDt = 0; }
     else this.drawDt += dt;
     if (this.build) this.ui.positionBuildOverlay();

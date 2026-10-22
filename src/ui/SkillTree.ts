@@ -9,8 +9,8 @@ const BASE = 80;
 const LATERAL = 138;
 const NODE_R = 34;
 
-interface NodeEl { u: UpgradeDef; g: SVGGElement; ring: SVGCircleElement; lv: SVGTextElement; cost: SVGTextElement; x: number; y: number }
-interface LinkEl { from: string; to: string; path: SVGPathElement; flow: SVGPathElement; cross: boolean }
+interface NodeEl { u: UpgradeDef; g: SVGGElement; ring: SVGCircleElement; lv: SVGTextElement; cost: SVGTextElement; x: number; y: number; key?: string }
+interface LinkEl { from: string; to: string; path: SVGPathElement; flow: SVGPathElement; cross: boolean; st?: string }
 
 const svg = <K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string | number> = {}, parent?: Element): SVGElementTagNameMap[K] => {
   const e = document.createElementNS(NS, tag);
@@ -280,7 +280,9 @@ export class SkillTree {
       this.pointers.delete(e.pointerId);
       if (this.pointers.size < 2) this.pinch = 0;
       if (!was || this.dragMoved > 8 || e.type === 'pointercancel') return;
-      const node = (e.target as Element).closest?.('.sk-node') as SVGGElement | null;
+      // pointer capture retargets the event to the svg: find what is really under the pointer
+      const hit = document.elementFromPoint(e.clientX, e.clientY) ?? (e.target as Element);
+      const node = hit.closest?.('.sk-node') as SVGGElement | null;
       if (node) {
         const id = node.dataset.id!;
         if (this.selected === id) this.buy(id);
@@ -322,9 +324,12 @@ export class SkillTree {
       const max = lvl >= n.u.max;
       const cost = upgradeCost(n.u, lvl);
       const state = max ? 'max' : lvl > 0 ? (g.money >= cost ? 'own can' : 'own') : !reqOk ? 'locked' : g.money >= cost ? 'can' : 'av';
-      n.g.setAttribute('class', `sk-node ${state}${this.selected === n.u.id ? ' sel' : ''}`);
       const C = 2 * Math.PI * (NODE_R + 6);
       const frac = lvl / n.u.max;
+      const key = `${state}|${this.selected === n.u.id}|${lvl}|${max ? 'M' : fmtMoney(cost)}`;
+      if (n.key === key) continue;
+      n.key = key;
+      n.g.setAttribute('class', `sk-node ${state}${this.selected === n.u.id ? ' sel' : ''}`);
       n.ring.setAttribute('stroke-dasharray', `${C * frac} ${C}`);
       n.lv.textContent = n.u.max > 1 ? `${lvl}/${n.u.max}` : max ? '✓' : '0/1';
       n.cost.textContent = max ? 'MÁXIMO' : fmtMoney(cost);
@@ -333,6 +338,8 @@ export class SkillTree {
       const fromOwned = l.from === 'root' || (g.upgrades[l.from] || 0) > 0;
       const toOwned = (g.upgrades[l.to] || 0) > 0;
       const st = fromOwned && toOwned ? 'on' : fromOwned ? 'half' : 'off';
+      if (l.st === st) continue;
+      l.st = st;
       l.path.setAttribute('class', `sk-link ${st}${l.cross ? ' cross' : ''}`);
       l.flow.setAttribute('class', `sk-flow ${st}`);
     }
