@@ -20,3 +20,10 @@ No celular: joystick dinâmico à esquerda, botões COLETAR/INTERAGIR, pinça pa
 - `render/` — sprites procedurais em atlas, chunks em cache (só o visível é desenhado), personagem e máquinas vetoriais animados, partículas em pool.
 - `ui/` — HUD, árvore de melhorias, menus, entrada teclado/mouse/toque.
 - `audio/` — efeitos sintetizados e música generativa.
+
+## ATHG — trava da plataforma
+
+Este jogo só roda dentro da ATHG (https://athg.antonycorp11.workers.dev). **Não remova:**
+
+- o `<script>` no topo do `index.html`: aberto fora de um iframe (link direto), redireciona para o player da ATHG (localhost/rede local continuam livres para testes);
+- o `Content-Security-Policy: frame-ancestors` (em `public/_headers` e na config do host): só a ATHG pode exibir o jogo em iframe.
