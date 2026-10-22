@@ -908,14 +908,37 @@ h3.mrole small { font-size: 11px !important; }
 /* desktop: roomier menus and a labelled side dock */
 @media (min-width: 761px) and (min-height: 521px) {
   .modal { width: min(1280px, 94vw); height: min(860px, 90vh); }
-  body:not(.touch) .hud-right { top: 50%; transform: translateY(-50%); gap: 6px; }
-  body:not(.touch) .hud-right .mbtn { width: 64px; height: 60px; border-radius: 14px; flex-direction: column; display: flex; align-items: center; justify-content: center; gap: 2px; }
-  body:not(.touch) .hud-right .mbtn svg { width: 24px; height: 24px; }
-  body:not(.touch) .hud-right .mbtn .tip { position: static; transform: none; opacity: 1; background: none; padding: 0; font: 900 10px var(--font); color: var(--ink); white-space: nowrap; }
-  body:not(.touch) .hud-left { width: 250px; }
-  body:not(.touch) .minimap { width: 170px; height: 170px; right: 10px; bottom: 14px; }
+  body:not(.touch) .minimap { width: 132px; height: 132px; right: 8px; bottom: 8px; }
 }
 @media (min-width: 761px) and (min-height: 521px) {
   .mgrid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)) !important; }
   .mcard .buy { flex-wrap: wrap; }
+}
+
+/* ---------- desktop: compact HUD, the world gets the screen ---------- */
+@media (min-width: 761px) and (min-height: 521px) {
+  body:not(.touch) .hud-counter { top: 6px !important; padding: 3px 16px 5px !important; min-width: 230px !important; border-radius: 12px !important; }
+  body:not(.touch) .hud-counter .lbl { display: none; }
+  body:not(.touch) .hud-counter .num { font-size: 24px !important; }
+  body:not(.touch) .hud-counter .bar { height: 6px !important; margin: 2px 0 2px !important; }
+  body:not(.touch) .hud-counter .sub { font-size: 10.5px !important; gap: 8px !important; }
+  body:not(.touch) .goal { top: 64px !important; font-size: 12px; padding: 3px 10px; }
+  body:not(.touch) .hud-left { top: 6px; left: 6px; width: 190px; gap: 4px; }
+  body:not(.touch) .chip { padding: 3px 9px; font-size: 12px; border-radius: 10px; gap: 6px; }
+  body:not(.touch) .chip .ico { width: 16px; height: 16px; }
+  body:not(.touch) .chip.money .mv { font-size: 15px; }
+  body:not(.touch) .chip .bar { height: 5px !important; }
+  body:not(.touch) .hud-right { top: 6px; right: 6px; transform: none; flex-direction: row; gap: 4px; }
+  body:not(.touch) .hud-right .mbtn { width: 38px; height: 38px; border-radius: 10px; }
+  body:not(.touch) .hud-right .mbtn svg { width: 20px; height: 20px; }
+  body:not(.touch) .hud-right .mbtn .tip { right: auto; left: 50%; top: 44px; transform: translateX(-50%); }
+  body:not(.touch) .hud-right .mbtn .dot { width: 11px; height: 11px; }
+  body:not(.touch) .msgs { width: min(330px, 30vw); left: 6px; bottom: 6px; }
+  body:not(.touch) .msg { font-size: 12px; padding: 5px 9px; gap: 7px; }
+  body:not(.touch) .msg .av { width: 24px; height: 24px; font-size: 11px; }
+  body:not(.touch) .msgs .msg:nth-child(n+2) { display: none; }
+  body:not(.touch) .hint { font-size: 12px; padding: 4px 10px; bottom: 6px; }
+  body:not(.touch) .mpanel { top: 50px !important; right: 6px; width: 270px; padding: 9px; font-size: 12px; }
+  body:not(.touch) .buildbar { bottom: 6px; padding: 5px 8px; }
+  body:not(.touch) .cbanner { top: 60px; transform: translateX(-50%) scale(.85); }
 }

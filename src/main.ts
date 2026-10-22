@@ -3,7 +3,7 @@ import { clamp } from './core/rng';
 import { AudioEngine } from './audio/Audio';
 import { MACHINES, MachineType } from './data/machines';
 import { Game, InputState } from './game/Game';
-import { SaveManager } from './game/Save';
+import { KV, SaveManager } from './game/Save';
 import { isBelt } from './game/Machines';
 import { ChunkRenderer } from './render/ChunkRenderer';
 import { Effects } from './render/Effects';
@@ -28,6 +28,19 @@ interface BuildState extends BuildPreview { painting: boolean; lastTx: number; l
   /** material mix within reach (fractions) */
   mix?: number[]; moving: { level: number; fromTx: number; fromTy: number; fromDir: number; extra: number } | null }
 
+/** localStorage, or an in-memory stand-in where it is blocked (sandboxed iframes, strict privacy modes). */
+function safeStorage(): KV {
+  try {
+    const ls = window.localStorage;
+    const k = '__gk_probe';
+    ls.setItem(k, '1'); ls.removeItem(k);
+    return ls;
+  } catch {
+    const m = new Map<string, string>();
+    return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => void m.set(k, v), removeItem: (k) => void m.delete(k) };
+  }
+}
+
 export class App implements PointerSink {
   game: Game;
   audio = new AudioEngine();
@@ -35,7 +48,7 @@ export class App implements PointerSink {
   renderer: Renderer;
   ui: UI;
   input: Input;
-  saver = new SaveManager(window.localStorage);
+  saver = new SaveManager(safeStorage());
   build: BuildState | null = null;
   settings: Settings = { music: 0.45, sfx: 0.8, quality: 1, ranges: false };
   private started = false;
@@ -147,7 +160,7 @@ export class App implements PointerSink {
   defaultZoom() {
     const short = Math.min(window.innerWidth, window.innerHeight);
     const touch = document.body.classList.contains('touch');
-    return touch ? clamp(short / 400, 0.85, 1.3) : clamp(short / 620, 0.8, 1.5);
+    return touch ? clamp(short / 400, 0.85, 1.3) : clamp(short / 760, 0.7, 1.2);
   }
 
   applySettings() {

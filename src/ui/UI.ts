@@ -82,7 +82,7 @@ export class UI {
     r.appendChild(this.pinLayer);
     const right = h(`<div class="hud-right"></div>`);
     for (const t of TABS) {
-      const b = h(`<button class="mbtn" data-tab="${t.id}" title="${t.name}">${t.icon}<span class="tip">${t.short}</span><span class="dot"></span></button>`);
+      const b = h(`<button class="mbtn" data-tab="${t.id}" title="${t.name}">${t.icon}<span class="tip">${t.name}</span><span class="dot"></span></button>`);
       b.addEventListener('click', () => { this.app.audio.play('click'); this.openModal(t.id); });
       right.appendChild(b);
     }

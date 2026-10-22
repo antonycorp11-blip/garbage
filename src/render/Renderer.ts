@@ -45,14 +45,17 @@ export class Renderer {
     this.tier = t;
     this.chunks.lite = t >= 2;
     this.resize();
-    // chunk canvases close to the real on-screen size: less memory and much cheaper to draw
-    this.chunks.setOutputScale(t === 0 ? this.chunks.assetRS : Math.ceil(this.dpr * 1.15 * 4) / 4);
+
   }
 
   resize() {
-    const caps = [2, 1.5, 1.25, 1];
+    // big desktop screens: a Retina-sized canvas is ~4.7M pixels per frame; 1.5 looks the same at arm's length
+    const desk = !document.body.classList.contains('touch') && window.innerWidth * window.innerHeight > 900000;
+    const caps = desk ? [1.5, 1.25, 1, 1] : [2, 1.5, 1.25, 1];
     this.dpr = Math.min(window.devicePixelRatio || 1, caps[this.tier] ?? 1);
     this.W = window.innerWidth; this.H = window.innerHeight;
+    // chunk canvases close to the real on-screen size: less memory and much cheaper to draw
+    this.chunks?.setOutputScale(Math.ceil(this.dpr * 1.15 * 4) / 4);
     this.canvas.width = Math.round(this.W * this.dpr);
     this.canvas.height = Math.round(this.H * this.dpr);
     this.canvas.style.width = this.W + 'px';
