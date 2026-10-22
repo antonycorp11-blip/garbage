@@ -602,8 +602,9 @@ export function drawWorker(c: C, x: number, y: number, time: number, o: WorkerPo
     const sway = o.moving ? Math.sin(walk) * 0.12 : Math.sin(time * 1.6) * 0.05;
     let sx: number, sy: number, a1: number, a2: number, a3: number;
     if (side) { sx = 2; sy = top + PH * 0.6; a1 = -0.85 - k * 0.5 + sway; a2 = -1.35 + k * 0.25; a3 = -0.95 + k * 0.35; }
-    else if (back) { sx = PW / 2 - 0.5; sy = top + PH * 0.5; a1 = -1.05 + k * 0.5 - sway; a2 = -0.25 + k * 0.45; a3 = -0.15 + k * 0.3; }
-    else { sx = -PW / 2 + 0.5; sy = top + PH * 0.5; a1 = 1.05 - k * 0.5 + sway; a2 = 0.25 - k * 0.45; a3 = 0.15 - k * 0.3; }
+    // front/back: the action reaches the way BIP faces (up over the head / down toward the viewer)
+    else if (back) { sx = PW / 2 - 0.5; sy = top + PH * 0.5; a1 = -1.05 * (1 - k) - k * 2.75 - sway * (1 - k); a2 = -0.25 * (1 - k) - k * 2.95; a3 = -0.15 * (1 - k) - k * 3.05; }
+    else { sx = -PW / 2 + 0.5; sy = top + PH * 0.5; a1 = 1.05 * (1 - k) - k * 0.45 + sway * (1 - k); a2 = 0.25 * (1 - k) - k * 0.2; a3 = 0.15 * (1 - k) - k * 0.1; }
     const L1 = 5.6, L2 = 4.6 + k * 1.8;
     const ex = sx - Math.sin(a1) * L1, ey = sy + Math.cos(a1) * L1;
     const wx = ex - Math.sin(a2) * L2, wy = ey + Math.cos(a2) * L2;
@@ -651,7 +652,8 @@ export function drawWorker(c: C, x: number, y: number, time: number, o: WorkerPo
   } else if (back) {
     loco('back');
     loco('front');
-    squash(() => { arm(); pod(); backPanel(); sensor(); crown(); tank('full'); });
+    // reaching up, the arm passes in front of the pod
+    squash(() => { if (k <= 0.25) arm(); pod(); backPanel(); sensor(); crown(); tank('full'); if (k > 0.25) arm(); });
   } else {
     loco('back');
     squash(() => tank('peek'));

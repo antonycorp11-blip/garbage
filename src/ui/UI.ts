@@ -63,7 +63,6 @@ export class UI {
     const r = this.root;
     r.innerHTML = '';
     const counter = h(`<div class="hud-counter pe"><div class="lbl">SUCATA RESTANTE</div><div class="num">1.000.000</div><div class="bar"><i></i></div><div class="sub"><span>removido <b class="rm">0</b></span><span><b class="pc">0%</b></span><span><b class="ps">0</b>/s</span><span class="desk-only"><b class="pm">0</b>/min</span><span>⚙ <b class="mc">0</b></span></div></div>`);
-    r.appendChild(counter);
     this.el.counter = counter;
     const left = h(`<div class="hud-left">
       <div class="chip money pe">${ICONS.coin.replace('<svg', '<svg class="ico"')}<span class="mv">$0</span><span class="rate"></span></div>
@@ -74,6 +73,7 @@ export class UI {
       <div class="chip yard pe" style="display:none" title="Pátio do posto: o que as máquinas entregam espera aqui para ser processado"><div class="row"><span>⚙ Pátio</span><span class="yv">0/250</span></div><div class="bar"><i></i></div></div>
     </div>`);
     r.appendChild(left);
+    left.insertBefore(counter, left.children[1]);
     this.el.left = left;
     left.querySelector('.contract')!.addEventListener('click', () => this.openModal('contracts'));
     left.querySelector('.alert')!.addEventListener('click', () => this.goToAlert());
@@ -470,7 +470,7 @@ export class UI {
     this.app.cancelBuild();
     this.select(null);
     if (!this.modalEl) {
-      const wrap = h(`<div class="modal-wrap"><div class="modal"><nav class="modal-nav"></nav><div class="modal-main"><div class="modal-top"><span class="mt-ic"></span><span class="mt-title"></span><span class="mt-money"></span><button class="close" aria-label="Fechar">✕</button></div><div class="modal-b"></div></div></div></div>`);
+      const wrap = h(`<div class="modal-wrap"><div class="modal"><div class="modal-main"><div class="modal-top"><span class="mt-ic"></span><span class="mt-title"></span><span class="mt-money"></span><button class="close" aria-label="Fechar">✕</button></div><div class="modal-b"></div></div></div></div>`);
       wrap.addEventListener('pointerdown', (e) => { if (e.target === wrap) this.closeModal(); });
       wrap.querySelector('.close')!.addEventListener('click', () => { this.app.audio.play('click'); this.closeModal(); });
       this.el.layer.appendChild(wrap);
@@ -479,9 +479,6 @@ export class UI {
     }
     this.modalTab = tab;
     const t = TABS.find((x) => x.id === tab) ?? { id: tab, name: 'Números', short: 'Números', icon: ICONS.stats };
-    const nav = this.modalEl.querySelector('.modal-nav')!;
-    nav.innerHTML = TABS.map((x) => `<button class="nav ${x.id === tab ? 'on' : ''}" data-tab="${x.id}">${x.icon}<span>${x.short}</span></button>`).join('');
-    nav.querySelectorAll('.nav').forEach((b) => b.addEventListener('click', () => { this.app.audio.play('click'); this.openModal((b as HTMLElement).dataset.tab as Tab); }));
     this.modalEl.querySelector('.mt-ic')!.innerHTML = t.icon;
     this.modalEl.querySelector('.mt-title')!.textContent = t.name;
     this.modalEl.querySelector('.mt-money')!.textContent = fmtMoney(this.game.money);

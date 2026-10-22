@@ -922,7 +922,7 @@ h3.mrole small { font-size: 11px !important; }
   body:not(.touch) .hud-counter .num { font-size: 24px !important; }
   body:not(.touch) .hud-counter .bar { height: 6px !important; margin: 2px 0 2px !important; }
   body:not(.touch) .hud-counter .sub { font-size: 10.5px !important; gap: 8px !important; }
-  body:not(.touch) .goal { top: 64px !important; font-size: 12px; padding: 3px 10px; }
+  body:not(.touch) .goal { font-size: 12px; padding: 3px 10px; }
   body:not(.touch) .hud-left { top: 6px; left: 6px; width: 190px; gap: 4px; }
   body:not(.touch) .chip { padding: 3px 9px; font-size: 12px; border-radius: 10px; gap: 6px; }
   body:not(.touch) .chip .ico { width: 16px; height: 16px; }
@@ -942,3 +942,22 @@ h3.mrole small { font-size: 11px !important; }
   body:not(.touch) .buildbar { bottom: 6px; padding: 5px 8px; }
   body:not(.touch) .cbanner { top: 60px; transform: translateX(-50%) scale(.85); }
 }
+
+/* ---------- menus are standalone screens (no side navigation) ---------- */
+.modal-nav { display: none !important; }
+.modal { flex-direction: column !important; }
+/* ---------- junk counter lives in the left column, under the money ---------- */
+.hud-left .hud-counter { position: static !important; transform: none !important; left: auto !important; right: auto !important; top: auto !important; min-width: 0 !important; width: auto !important; text-align: left !important; padding: 4px 10px 5px !important; border-radius: 12px !important; }
+.hud-left .hud-counter .lbl { display: block !important; font-size: 9px !important; letter-spacing: 1.5px !important; text-align: left; }
+.hud-left .hud-counter .num { font-size: 19px !important; line-height: 1.05; letter-spacing: .3px; }
+.hud-left .hud-counter .bar { height: 5px !important; margin: 3px 0 2px !important; }
+.hud-left .hud-counter .sub { justify-content: flex-start !important; gap: 6px !important; font-size: 10px !important; }
+.hud-left .hud-counter .sub > span:nth-child(n+3) { display: none; }
+body:not(.touch) .goal { top: 8px !important; }
+/* readable labels on the menu buttons */
+.mbtn .tip { color: #fff3dc !important; background: #2a1a10 !important; border-radius: 8px; padding: 4px 9px !important; font: 900 12px var(--font) !important; box-shadow: 0 2px 0 rgba(0,0,0,.4); }
+body.touch .hud-left .hud-counter { padding: 3px 9px 4px !important; }
+body.touch .hud-left .hud-counter .lbl { font-size: 8px !important; }
+body.touch .hud-left .hud-counter .num { font-size: 16px !important; }
+body.touch .hud-left .hud-counter .sub { display: none !important; }
+body.touch .hud-left .hud-counter .bar { margin: 2px 0 0 !important; }
