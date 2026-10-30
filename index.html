@@ -43,6 +43,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Lilita+One&family=Nunito:wght@600;800;900&display=swap" />
   
+  <!-- ATHG: progresso salvo na conta do jogador (continua em qualquer aparelho). Antes dos scripts do jogo. -->
+  <script src="https://athg.antonycorp11.workers.dev/sdk/athg-sdk.js"></script>
+  <script>window.ATHG && ATHG.cloudSync && ATHG.cloudSync({ exclude: ['__gk_probe', 'garbage-kingdom-save-corrupt'] })</script>
 </head>
 <body>
   <canvas id="game"></canvas>
